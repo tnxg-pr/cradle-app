@@ -144,6 +144,10 @@ jobs:
           CRADLE_ELECTRON_REBUILD_ARCH: ${{ matrix.builderArch }}
         run: pnpm build:desktop
 
+      - name: Restore node_modules after build
+        working-directory: .cradle-source
+        run: pnpm install --frozen-lockfile
+
       - name: Package unpacked app
         working-directory: .cradle-source/apps/desktop
         env:
