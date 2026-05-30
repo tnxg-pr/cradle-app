@@ -120,40 +120,39 @@ jobs:
           export PATH="$(pnpm bin -g):$PATH"
           pnpm install --frozen-lockfile
 
+      - name: Patch install-runtime-deps.mjs to skip pnpm install
+        working-directory: .cradle-source
+        shell: bash
+        run: |
+          # The install-runtime-deps.mjs script runs pnpm install with
+          # --config.node-linker=hoisted which restructures the workspace's
+          # node_modules and breaks electron-builder, electron-vite, etc.
+          # Patch it to skip the pnpm install call. We'll install dist deps separately.
+          node -e "
+            const fs = require('fs');
+            const scriptPath = 'apps/server/scripts/install-runtime-deps.mjs';
+            let content = fs.readFileSync(scriptPath, 'utf8');
+            // Replace the pnpm install spawnSync call with a no-op that logs a message
+            content = content.replace(
+              'const command = process.platform',
+              'console.log(\"CI: skipping pnpm install for dist (handled separately)\");\nprocess.exit(0);\nconst command = process.platform'
+            );
+            fs.writeFileSync(scriptPath, content);
+          "
+
       - name: Build Desktop
         working-directory: .cradle-source
         env:
           CRADLE_DESKTOP_UPDATE_URL: ${{ steps.feed.outputs.feed_url }}
           CRADLE_ELECTRON_REBUILD_ARCH: ${{ matrix.builderArch }}
-        shell: bash
-        run: |
-          # The build scripts trigger a second pnpm install via install-runtime-deps.mjs
-          # which restructures node_modules and breaks electron-builder, electron-vite, etc.
-          # Intercept pnpm install calls to prevent the restructure.
-          WRAPPER_DIR=$(mktemp -d)
-          REAL_PNPM=$(command -v pnpm)
-          cat > "$WRAPPER_DIR/pnpm" <<'WRAPEOF'
-          #!/bin/bash
-          if [[ "$1" == "install" ]]; then
-            echo "CI: intercepting pnpm install (args: $*)"
-            # Skip the install that would restructure workspace node_modules
-            exit 0
-          fi
-          exec WRAPEOF_PNPM "$@"
-          WRAPEOF
-          sed -i '' "s|WRAPEOF_PNPM|$REAL_PNPM|g" "$WRAPPER_DIR/pnpm"
-          chmod +x "$WRAPPER_DIR/pnpm"
-          export PATH="$WRAPPER_DIR:$PATH"
-          pnpm build:desktop
+        run: pnpm build:desktop
 
       - name: Install server runtime deps for packaging
         working-directory: .cradle-source
         shell: bash
         run: |
-          # The install-runtime-deps.mjs was intercepted during build.
-          # Install server runtime deps into dist now, outside the workspace context.
-          # Must move dist outside workspace to prevent pnpm from detecting the workspace
-          # and restructuring node_modules.
+          # Install server runtime deps into dist, outside the workspace context.
+          # Move dist to temp dir to prevent pnpm from detecting the workspace.
           DIST_DIR="apps/server/dist"
           TMP_DIST=$(mktemp -d)
           cp -r "$DIST_DIR"/* "$TMP_DIST/"
