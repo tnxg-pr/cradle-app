@@ -120,6 +120,20 @@ jobs:
           export PATH="$(pnpm bin -g):$PATH"
           pnpm install --frozen-lockfile
 
+      - name: Remove desktop postinstall to prevent electron-builder conflicts
+        working-directory: .cradle-source
+        run: |
+          # The build scripts trigger a second pnpm install (--config.node-linker=hoisted)
+          # which restructures node_modules and causes electron-builder install-app-deps
+          # to fail. Native modules are already rebuilt by the rebuild-server-native step.
+          node -e "
+            const fs = require('fs');
+            const pkgPath = 'apps/desktop/package.json';
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            delete pkg.scripts.postinstall;
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+          "
+
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
@@ -143,10 +157,6 @@ jobs:
           CRADLE_DESKTOP_UPDATE_URL: ${{ steps.feed.outputs.feed_url }}
           CRADLE_ELECTRON_REBUILD_ARCH: ${{ matrix.builderArch }}
         run: pnpm build:desktop
-
-      - name: Restore node_modules after build
-        working-directory: .cradle-source
-        run: pnpm install --frozen-lockfile
 
       - name: Package unpacked app
         working-directory: .cradle-source/apps/desktop
