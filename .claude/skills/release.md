@@ -109,6 +109,7 @@ User: /release dev
   `https://github.com/wibus-wee/cradle-app/releases/latest/download/`
 - Dev builds use a rolling generic provider URL:
   `https://github.com/wibus-wee/cradle-app/releases/download/feed-dev/`
+- The dev feed uses `latest-mac.yml`; app-side updater logic does not switch to `dev-mac.yml`.
 - Each dev run publishes both its own `dev-*` release and the `feed-dev` update feed.
 - Dev releases are marked as prerelease
 - Release workflow timeout: 60 minutes

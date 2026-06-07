@@ -182,6 +182,8 @@ jobs:
 
       - name: Prepare release assets
         shell: bash
+        env:
+          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
@@ -202,6 +204,7 @@ jobs:
 
           const artifactsRoot = 'artifacts'
           const outputRoot = 'release-assets'
+          const releaseChannel = process.env.RELEASE_CHANNEL
 
           function walk(dir, files = []) {
             for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -301,6 +304,21 @@ jobs:
             }
             writeManifest(path.join(outputRoot, name), merged)
           }
+
+          if (releaseChannel === 'dev') {
+            const devMacManifest = path.join(outputRoot, 'dev-mac.yml')
+            const latestMacManifest = path.join(outputRoot, 'latest-mac.yml')
+
+            if (!fs.existsSync(latestMacManifest) && fs.existsSync(devMacManifest)) {
+              fs.copyFileSync(devMacManifest, latestMacManifest)
+            }
+
+            if (!fs.existsSync(latestMacManifest)) {
+              throw new Error('Dev release feed requires latest-mac.yml')
+            }
+
+            fs.rmSync(devMacManifest, { force: true })
+          }
           NODE
 
           find release-assets -maxdepth 1 -type f -print | sort
@@ -317,6 +335,25 @@ jobs:
             release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove stale dev feed manifests
+        if: needs.resolve.outputs.channel == 'dev'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          release_json=$(gh api "repos/${{ github.repository }}/releases/tags/${{ needs.resolve.outputs.dev_feed_tag }}" 2>/dev/null || true)
+          if [ -z "$release_json" ]; then
+            exit 0
+          fi
+
+          release_id=$(node -e 'const fs = require("node:fs"); const input = fs.readFileSync(0, "utf8"); console.log(JSON.parse(input).id)' <<< "$release_json")
+          gh api "repos/${{ github.repository }}/releases/${release_id}/assets" --paginate --jq '.[] | select(.name == "dev-mac.yml") | .id' |
+            while read -r asset_id; do
+              [ -n "$asset_id" ] && gh api -X DELETE "repos/${{ github.repository }}/releases/assets/${asset_id}" >/dev/null
+            done
 
       - name: Update dev feed release
         if: needs.resolve.outputs.channel == 'dev'
