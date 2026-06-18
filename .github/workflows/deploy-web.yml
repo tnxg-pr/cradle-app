@@ -1,0 +1,57 @@
+name: Deploy Web
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 'Git ref from wibus-wee/Cradle to checkout'
+        required: true
+        default: 'main'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy-web:
+    name: Deploy Web
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: https://app.cradle.wibus.ren
+    steps:
+      - name: Checkout Cradle source
+        uses: actions/checkout@v4
+        with:
+          repository: wibus-wee/Cradle
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
+          ref: ${{ inputs.source_ref }}
+
+      - name: Setup pnpm & Node.js
+        uses: ./.github/actions/setup
+        with:
+          node-version: 24
+
+      - name: Build Web App
+        run: pnpm build:web
+
+      - name: Prepare Pages artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "app.cradle.wibus.ren" > apps/web/dist/CNAME
+          cp apps/web/dist/index.html apps/web/dist/404.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
