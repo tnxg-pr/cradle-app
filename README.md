@@ -9,11 +9,28 @@
   </p>
 </p>
 
-<pre align="center">
-🧪 Work In Progress
-</pre>
+> The project is still in the early stages of development and I am not ready to accept contributions. If you have any ideas or suggestions, please feel free to open an issue. But anyways, thank you for your support and interest in this project ❤️.
+
+## What's Cradle?
 
 Cradle is a desktop-first platform for managing AI agents and their workflows. It provides a unified environment where you can run agents, track issues, manage sessions, and integrate multiple LLM providers — all from a single native application.
+
+## Builtin Plugins
+
+| Plugin | Description | Status |
+|---|---|---|
+| `@cradleapp/browser-use` | MCP plugin that controls Cradle's built-in browser, supporting navigation, clicking, input, screenshots, page text reading, and DOM structure inspection. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
+| `@cradleapp/cc-switch` | Maps CC Switch provider data into Cradle as a read-only external provider source. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
+| `@cradleapp/system-info` | Exposes system information capabilities through the plugin API and Web commands. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
+
+## 🌻 Thanks
+
+I have been deeply inspired by the following projects and communities:
+
+- Thanks to [Codex](https://chatgpt.com/codex/) for its feature ideas.
+- Thanks to [LobeHub](https://lobehub.com/) for its streamdown implementation.
+- Thanks to [Yansu](https://yansu.app/) for its chronicle ideas.
+- Thanks to [CC Switch](https://ccswitch.io) for our provider management plugin integration.
 
 ## License
 
