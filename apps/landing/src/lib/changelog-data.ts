@@ -15,9 +15,35 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '0.0.0-dev-20260621.1',
+    date: '2026-06-21',
+    featured: true,
+    body: `> Conversation Bridge arrives, Diffs Preview opens up, and the composer keeps getting smoother.
+
+## Features
+
+1. Conversation Bridge is now available from Integration settings. Cradle can connect external conversation platforms to Chat Sessions, so work can continue outside the main desktop window.
+2. The first Bridge plugin supports Slack. Follow the setup guide in Settings, bind a Slack conversation, and keep chatting with Cradle from Slack while the feature continues to evolve.
+3. Cradle Diffs Preview is now available as an early review surface for reading code changes directly inside Cradle.
+4. Agents can now be granted broader access to Cradle's local capabilities. When enabled, Cradle installs its skills into the local global skills directory; the About page explains what is written.
+5. Composer Toolbar interactions continue to improve across model selection, Claude model aliases, and Thinking Effort controls.
+
+## Improvements
+
+1. Thinking Effort now has more responsive micro-interactions across click, press, hold, and drag gestures.
+2. Claude model selection is clearer: the main composer model picker stays focused on the active model, while Haiku, Sonnet, and Opus remain configurable as alias defaults.
+3. Conversation Bridge controls are integrated into the Slack flow, making bind, status, unbind, runtime, and model selection easier to manage from the connected conversation.
+4. The review workflow is easier to keep in sight with Diffs Preview available during fast development cycles.
+
+## Bug Fixes
+
+1. Fixed several Conversation Bridge edge cases found while wiring the Slack plugin into live Chat Sessions.
+2. Fixed additional composer toolbar and model-selection interaction issues.
+3. Fixed several smaller UI and runtime stability issues across today's development cycle.`,
+  },
+  {
     version: '0.0.0-dev-20260620.1',
     date: '2026-06-20',
-    featured: true,
     body: `> More control over plugins, models, sessions, memory, and streaming reliability.
 
 ## Features
