@@ -91,9 +91,9 @@ jobs:
           fi
 
           if [ "$CHANNEL" = "release" ]; then
-            UPDATE_URL="https://github.com/${{ github.repository }}/releases/latest/download/"
+            UPDATE_URL="https://github.com/${{ github.repository }}/releases/latest/download/manifest.json"
           else
-            UPDATE_URL="https://github.com/${{ github.repository }}/releases/download/${DEV_FEED_TAG}/"
+            UPDATE_URL="https://github.com/${{ github.repository }}/releases/download/${DEV_FEED_TAG}/manifest.json"
           fi
 
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
@@ -187,6 +187,7 @@ jobs:
         shell: bash
         env:
           RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+          UPDATE_MANIFEST_URL: ${{ needs.resolve.outputs.update_url }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
@@ -204,10 +205,12 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs')
           const path = require('node:path')
+          const crypto = require('node:crypto')
 
           const artifactsRoot = 'artifacts'
           const outputRoot = 'release-assets'
           const releaseChannel = process.env.RELEASE_CHANNEL
+          const updateManifestUrl = process.env.UPDATE_MANIFEST_URL
 
           function walk(dir, files = []) {
             for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -284,6 +287,76 @@ jobs:
             fs.writeFileSync(file, `${lines.join('\n')}\n`, 'utf8')
           }
 
+          function dirnameUrl(url) {
+            return url.slice(0, url.lastIndexOf('/') + 1)
+          }
+
+          function readArtifactArch(fileName) {
+            if (fileName.includes('arm64')) {
+              return 'arm64'
+            }
+            if (fileName.includes('x64')) {
+              return 'x64'
+            }
+            if (fileName.includes('universal')) {
+              return 'universal'
+            }
+            return null
+          }
+
+          function writeCradleUpdateManifest(manifestPath) {
+            if (!updateManifestUrl || !updateManifestUrl.endsWith('/manifest.json')) {
+              throw new Error('UPDATE_MANIFEST_URL must point directly at manifest.json')
+            }
+
+            const electronManifest = parseManifest(manifestPath)
+            if (!electronManifest.version) {
+              throw new Error(`${path.basename(manifestPath)} is missing version`)
+            }
+
+            const assetBaseUrl = dirnameUrl(updateManifestUrl)
+            const updateFiles = []
+            for (const file of electronManifest.files) {
+              if (!file.url) {
+                continue
+              }
+
+              const artifactName = path.basename(file.url)
+              const artifactPath = path.join(outputRoot, artifactName)
+              if (!fs.existsSync(artifactPath)) {
+                throw new Error(`Update artifact is missing from release assets: ${artifactName}`)
+              }
+
+              const artifactBytes = fs.readFileSync(artifactPath)
+              updateFiles.push({
+                url: `${assetBaseUrl}${artifactName}`,
+                size: fs.statSync(artifactPath).size,
+                sha256: crypto.createHash('sha256').update(artifactBytes).digest('hex'),
+                platform: 'darwin',
+                arch: readArtifactArch(artifactName),
+              })
+            }
+
+            if (updateFiles.length === 0) {
+              throw new Error('Cradle update manifest requires at least one macOS artifact')
+            }
+
+            const updateManifest = {
+              version: electronManifest.version,
+              releaseName: `Cradle ${electronManifest.version}`,
+              releaseNotes: null,
+              releaseDate: electronManifest.releaseDate ?? new Date().toISOString(),
+              minSupportedVersion: null,
+              files: updateFiles,
+            }
+
+            fs.writeFileSync(
+              path.join(outputRoot, 'manifest.json'),
+              `${JSON.stringify(updateManifest, null, 2)}\n`,
+              'utf8',
+            )
+          }
+
           const manifestsByName = new Map()
           for (const file of walk(artifactsRoot)) {
             const name = path.basename(file)
@@ -355,6 +428,12 @@ jobs:
               }
             }
           }
+
+          const latestMacManifest = path.join(outputRoot, 'latest-mac.yml')
+          if (!fs.existsSync(latestMacManifest)) {
+            throw new Error('Desktop release requires latest-mac.yml')
+          }
+          writeCradleUpdateManifest(latestMacManifest)
           NODE
 
           find release-assets -maxdepth 1 -type f -print | sort
