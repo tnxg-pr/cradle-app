@@ -358,9 +358,13 @@ jobs:
 
           shopt -s globstar nullglob
           for file in artifacts/**/*.{dmg,zip,exe,blockmap,yml,AppImage,deb}; do
-            target="release-assets/$(basename "$file")"
+            basename="$(basename "$file")"
+            if [[ "$basename" == "builder-debug.yml" ]]; then
+              continue
+            fi
+            target="release-assets/$basename"
             if [ -e "$target" ]; then
-              echo "Duplicate release asset name: $(basename "$file")" >&2
+              echo "Duplicate release asset name: $basename" >&2
               exit 1
             fi
             cp "$file" "$target"
