@@ -78,13 +78,21 @@ export class WindowManager {
     )
     const targetBounds = resolveWindowBoundsNearPoint(targetSize, releasePoint, targetDisplay.workArea)
 
+    const isMacOS = process.platform === 'darwin'
+
     const win = new BrowserWindow({
       ...targetBounds,
       minWidth: TEAROFF_WINDOW_MIN_WIDTH,
       minHeight: TEAROFF_WINDOW_MIN_HEIGHT,
-      titleBarStyle: 'hiddenInset',
-      titleBarOverlay: true,
-      trafficLightPosition: { x: 16, y: 18 },
+      titleBarStyle: isMacOS ? 'hiddenInset' : 'hidden',
+      titleBarOverlay: isMacOS
+        ? true
+        : {
+            color: '#00000000',
+            symbolColor: '#ffffff',
+            height: 36,
+          },
+      ...(isMacOS && { trafficLightPosition: { x: 16, y: 18 } }),
       webPreferences: {
         preload: resolveDesktopPreloadPath(__dirname),
         contextIsolation: true,

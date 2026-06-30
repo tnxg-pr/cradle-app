@@ -143,6 +143,8 @@ async function createMainWindow(serverUrl: string): Promise<BrowserWindow> {
     screen.getPrimaryDisplay().workArea,
   )
 
+  const isMacOS = process.platform === 'darwin'
+
   const win = new BrowserWindow({
     x: restoredBounds.x,
     y: restoredBounds.y,
@@ -150,9 +152,15 @@ async function createMainWindow(serverUrl: string): Promise<BrowserWindow> {
     height: restoredBounds.height,
     minWidth: MAIN_WINDOW_MIN_WIDTH,
     minHeight: MAIN_WINDOW_MIN_HEIGHT,
-    titleBarStyle: 'hiddenInset',
-    titleBarOverlay: true,
-    trafficLightPosition: { x: 16, y: 18 },
+    titleBarStyle: isMacOS ? 'hiddenInset' : 'hidden',
+    titleBarOverlay: isMacOS
+      ? true
+      : {
+          color: '#00000000',
+          symbolColor: '#ffffff',
+          height: 36,
+        },
+    ...(isMacOS && { trafficLightPosition: { x: 16, y: 18 } }),
     webPreferences: {
       preload: resolveDesktopPreloadPath(__dirname),
       contextIsolation: true,

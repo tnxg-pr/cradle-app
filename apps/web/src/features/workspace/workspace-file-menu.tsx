@@ -27,6 +27,7 @@ import {
 } from '~/components/ui/dialog'
 import { Input } from '~/components/ui/input'
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut } from '~/components/ui/menu'
+import { platform } from '~/lib/electron'
 
 import { getWorkspaceFileExtension } from './workspace-file-language'
 import {
@@ -241,7 +242,7 @@ export function WorkspaceFileContextMenu({
           }}
           >
             <FolderOpenIcon />
-            {t('fileTree.action.revealInFinder')}
+            {t(platform === 'win32' ? 'fileTree.action.revealInExplorer' : 'fileTree.action.revealInFinder')}
           </MenuItem>
         )}
         <MenuSeparator />

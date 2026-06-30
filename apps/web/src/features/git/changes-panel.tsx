@@ -35,7 +35,7 @@ import {
   WORKSPACE_FILE_SHORTCUT_SCOPE_ATTRIBUTE,
 } from '~/features/workspace/workspace-file-shortcuts'
 import { cn } from '~/lib/cn'
-import { isElectron, nativeIpc } from '~/lib/electron'
+import { isElectron, nativeIpc, platform } from '~/lib/electron'
 import { openWorkspaceDiffs } from '~/navigation/navigation-commands'
 import { useBrowserPanelStore } from '~/store/browser-panel'
 import { useLayoutStore } from '~/store/layout'
@@ -528,7 +528,7 @@ function ChangesTreeView({
     catch (error) {
       toastManager.add({
         type: 'error',
-        title: t('fileTree.toast.revealFailed'),
+        title: t(platform === 'win32' ? 'fileTree.toast.revealFailedExplorer' : 'fileTree.toast.revealFailed'),
         description: error instanceof Error ? error.message : String(error),
       })
     }

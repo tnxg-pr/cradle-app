@@ -17,7 +17,7 @@ import { toastManager } from '~/components/ui/toast'
 import type { GitFileStatus } from '~/features/git/types'
 import { useGitRepositories } from '~/features/git/use-git'
 import { useWorkspaceFiles } from '~/features/workspace/use-workspace-files'
-import { getServerUrl, isElectron, nativeIpc } from '~/lib/electron'
+import { getServerUrl, isElectron, nativeIpc, platform } from '~/lib/electron'
 import { queryRefreshPolicies } from '~/lib/query-refresh-policy'
 import { serializeWorkspaceFileDragPayload, writeWorkspaceFileDragData } from '~/lib/workspace-drag-data'
 import { useBrowserPanelStore } from '~/store/browser-panel'
@@ -622,7 +622,7 @@ function FileTreeInner({ workspaceId, paths, preparedInput, ready, gitStatus, on
     catch (error) {
       toastManager.add({
         type: 'error',
-        title: t('fileTree.toast.revealFailed'),
+        title: t(platform === 'win32' ? 'fileTree.toast.revealFailedExplorer' : 'fileTree.toast.revealFailed'),
         description: error instanceof Error ? error.message : String(error),
       })
     }
