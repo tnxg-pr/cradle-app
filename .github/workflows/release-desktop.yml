@@ -456,6 +456,22 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 21
+
+      - name: Write bleeding-edge release body
+        if: needs.resolve.outputs.channel == 'bleeding-edge'
+        shell: bash
+        run: |
+          {
+            echo "## Bleeding Edge Build"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo ""
+            echo "### Recent changes"
+            echo ""
+            git log --oneline -20 --no-merges --format='- %s (%h)' HEAD
+          } > release-body.md
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -693,7 +709,7 @@ jobs:
             const updateManifest = {
               version: desktopVersion,
               releaseName: `Cradle ${desktopVersion}`,
-              releaseNotes: readChangelogBody(),
+              releaseNotes: readChangelogBody() || (releaseChannel === 'bleeding-edge' && fs.existsSync('release-body.md') ? fs.readFileSync('release-body.md', 'utf8').trim() : null),
               releaseDate: new Date().toISOString(),
               minSupportedVersion: null,
               files: updateFiles,
@@ -736,7 +752,39 @@ jobs:
 
           writeCradleUpdateManifest()
 
-          const releaseBody = generateReleaseBody() || `Cradle ${displayVersion}`
+          function writeLatestYml() {
+            const exeName = fs.readdirSync(outputRoot).find(f => f.endsWith('-setup.exe'))
+            if (!exeName) {
+              console.log('No *-setup.exe found, skipping latest.yml generation')
+              return
+            }
+
+            const exePath = path.join(outputRoot, exeName)
+            const exeBytes = fs.readFileSync(exePath)
+            const sha512 = crypto.createHash('sha512').update(exeBytes).digest('base64')
+            const size = fs.statSync(exePath).size
+            const baseUrl = releaseDownloadUrl.endsWith('/') ? releaseDownloadUrl : `${releaseDownloadUrl}/`
+
+            const lines = [
+              `version: ${desktopVersion}`,
+              'files:',
+              `  - url: ${baseUrl}${exeName}`,
+              `    sha512: ${sha512}`,
+              `    size: ${size}`,
+              `path: ${baseUrl}${exeName}`,
+              `sha512: ${sha512}`,
+              `releaseDate: ${new Date().toISOString()}`,
+            ]
+
+            fs.writeFileSync(path.join(outputRoot, 'latest.yml'), `${lines.join('\n')}\n`, 'utf8')
+            console.log(`Generated latest.yml for ${exeName}`)
+          }
+
+          writeLatestYml()
+
+          const releaseBody = releaseChannel === 'bleeding-edge' && fs.existsSync('release-body.md')
+            ? fs.readFileSync('release-body.md', 'utf8')
+            : generateReleaseBody() || `Cradle ${displayVersion}`
           fs.writeFileSync('release-body.md', releaseBody, 'utf8')
           NODE
 
