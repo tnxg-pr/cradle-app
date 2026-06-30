@@ -39,6 +39,26 @@ export function readTerminalLaunchCandidates(platform: NodeJS.Platform = process
   return LINUX_TERMINAL_CANDIDATES
 }
 
+/**
+ * Build a launch candidate from a user-supplied terminal app name.
+ *
+ * There is no stable system API for "the user's default terminal", so we let the
+ * user name one directly. The name is wrapped per platform rather than treated
+ * as a raw shell command, keeping the input predictable:
+ *   - macOS: `open -a "<app>" <cwd>` (e.g. `Ghostty.app`, `iTerm.app`)
+ *   - Windows: `<app> -d <cwd>` (e.g. `wt.exe`)
+ *   - Linux: `<app> --working-directory=<cwd>` (e.g. `gnome-terminal`)
+ */
+export function buildAppTerminalCandidate(appName: string, platform: NodeJS.Platform = process.platform): TerminalCandidate {
+  if (platform === 'darwin') {
+    return { label: appName, executable: '/usr/bin/open', args: cwd => ['-a', appName, cwd] }
+  }
+  if (platform === 'win32') {
+    return { label: appName, executable: appName, args: cwd => ['-d', cwd] }
+  }
+  return { label: appName, executable: appName, args: cwd => [`--working-directory=${cwd}`] }
+}
+
 function runTerminalCandidate(candidate: TerminalCandidate, cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(candidate.executable, candidate.args(cwd), {
@@ -56,19 +76,31 @@ function runTerminalCandidate(candidate: TerminalCandidate, cwd: string): Promis
   })
 }
 
-export async function launchPathInTerminal(cwd: string): Promise<string> {
-  const candidates = readTerminalLaunchCandidates()
-  const errors: string[] = []
+/**
+ * Open `cwd` in an external terminal.
+ *
+ * When `appName` is provided, that exact terminal is launched with no fallback —
+ * the user has been explicit, so silently substituting another terminal would be
+ * surprising. When omitted, the platform's default preferred terminal is used
+ * (the first candidate), again with no fallback.
+ */
+export async function launchPathInTerminal(cwd: string, appName?: string | null): Promise<string> {
+  const trimmed = (appName ?? '').trim()
+  const candidate = trimmed
+    ? buildAppTerminalCandidate(trimmed)
+    : readTerminalLaunchCandidates()[0]
 
-  for (const candidate of candidates) {
-    try {
-      await runTerminalCandidate(candidate, cwd)
-      return candidate.label
-    }
-    catch (error) {
-      errors.push(`${candidate.label}: ${error instanceof Error ? error.message : String(error)}`)
-    }
+  if (!candidate) {
+    throw new Error(`No supported terminal could open ${cwd}.`)
   }
 
-  throw new Error(`No supported terminal could open ${cwd}. Tried ${candidates.map(candidate => candidate.label).join(', ')}. ${errors.join(' | ')}`)
+  try {
+    await runTerminalCandidate(candidate, cwd)
+    return candidate.label
+  }
+  catch (error) {
+    throw new Error(
+      `Could not open ${cwd} in ${candidate.label}: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 }

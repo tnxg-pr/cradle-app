@@ -77,6 +77,7 @@ export const PreferencesModel = {
     autoCheckForUpdates: t.Boolean({ default: true }),
     autoDownloadUpdates: t.Boolean({ default: false }),
     lastSeenChangelogVersion: t.Union([t.String(), t.Null()], { default: null }),
+    externalTerminalApp: t.Union([t.String(), t.Null()], { default: null }),
   }, { additionalProperties: false }),
   networkPreferences: t.Object({
     proxyEnabled: t.Boolean({ default: true }),
@@ -181,6 +182,7 @@ export const DesktopPreferencesJsonSchema = z.union([
   autoCheckForUpdates: z.boolean().default(true),
   autoDownloadUpdates: z.boolean().default(false),
   lastSeenChangelogVersion: z.string().nullable().default(null),
+  externalTerminalApp: z.string().nullable().default(null),
 }).default({
   requireDoubleCommandQToQuit: true,
   appshotHotkeyEnabled: true,
@@ -188,6 +190,7 @@ export const DesktopPreferencesJsonSchema = z.union([
   autoCheckForUpdates: true,
   autoDownloadUpdates: false,
   lastSeenChangelogVersion: null,
+  externalTerminalApp: null,
 }))
 
 export const NetworkPreferencesJsonSchema = z.union([

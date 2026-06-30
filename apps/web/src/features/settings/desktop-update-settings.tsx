@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import { Input } from '~/components/ui/input'
 import { Progress } from '~/components/ui/progress'
 import { Spinner } from '~/components/ui/spinner'
 import { Switch } from '~/components/ui/switch'
@@ -89,6 +90,7 @@ export function DesktopUpdateSettings() {
   const [cliStatus, setCliStatus] = useState<DesktopCliStatus>(EMPTY_CLI_STATUS)
   const [statusReady, setStatusReady] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [terminalAppDraft, setTerminalAppDraft] = useState('')
   const {
     prefs: desktopPrefs,
     isSaving: isSavingDesktopPrefs,
@@ -200,6 +202,10 @@ export function DesktopUpdateSettings() {
     return subscribeDesktopUpdateStatus(setStatus)
   }, [refreshStatus])
 
+  useEffect(() => {
+    setTerminalAppDraft(desktopPrefs?.externalTerminalApp ?? '')
+  }, [desktopPrefs?.externalTerminalApp])
+
   const prefsDisabled = !desktopPrefs || isSavingDesktopPrefs
 
   return (
@@ -241,6 +247,23 @@ export function DesktopUpdateSettings() {
             disabled={prefsDisabled}
             aria-label={t('desktop.autoCheckForUpdates.label' as SettingsKey)}
             data-testid="desktop-auto-check"
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          label={t('desktop.externalTerminal.label' as SettingsKey)}
+          description={t('desktop.externalTerminal.description' as SettingsKey)}
+          vertical
+        >
+          <Input
+            value={terminalAppDraft}
+            onChange={e => setTerminalAppDraft(e.target.value)}
+            onBlur={() => savePreference({ externalTerminalApp: terminalAppDraft.trim().length > 0 ? terminalAppDraft.trim() : null })}
+            onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+            placeholder={t('desktop.externalTerminal.placeholder' as SettingsKey)}
+            disabled={prefsDisabled}
+            aria-label={t('desktop.externalTerminal.label' as SettingsKey)}
+            data-testid="desktop-external-terminal"
           />
         </SettingsRow>
 

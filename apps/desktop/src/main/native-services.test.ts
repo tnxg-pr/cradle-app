@@ -10,7 +10,7 @@ import {
   readScreenPointAppshotDestinationFrame,
 } from './native-appshot-target'
 import { readEditorLaunchCandidates } from './native-editor-launcher'
-import { readTerminalLaunchCandidates } from './native-terminal-launcher'
+import { buildAppTerminalCandidate, readTerminalLaunchCandidates } from './native-terminal-launcher'
 
 function frontmostContext(): MacAppshotFrontmostContext {
   return {
@@ -145,5 +145,31 @@ describe('readTerminalLaunchCandidates', () => {
       'PowerShell',
       'Command Prompt',
     ])
+  })
+})
+
+describe('buildAppTerminalCandidate', () => {
+  it('wraps the app name with `open -a` on macOS', () => {
+    const candidate = buildAppTerminalCandidate('Ghostty.app', 'darwin')
+
+    expect(candidate.label).toBe('Ghostty.app')
+    expect(candidate.executable).toBe('/usr/bin/open')
+    expect(candidate.args('/work')).toEqual(['-a', 'Ghostty.app', '/work'])
+  })
+
+  it('invokes the binary with `-d <cwd>` on Windows', () => {
+    const candidate = buildAppTerminalCandidate('wt.exe', 'win32')
+
+    expect(candidate.label).toBe('wt.exe')
+    expect(candidate.executable).toBe('wt.exe')
+    expect(candidate.args('C:\\work')).toEqual(['-d', 'C:\\work'])
+  })
+
+  it('invokes the binary with `--working-directory=<cwd>` on Linux', () => {
+    const candidate = buildAppTerminalCandidate('gnome-terminal', 'linux')
+
+    expect(candidate.label).toBe('gnome-terminal')
+    expect(candidate.executable).toBe('gnome-terminal')
+    expect(candidate.args('/work')).toEqual(['--working-directory=/work'])
   })
 })

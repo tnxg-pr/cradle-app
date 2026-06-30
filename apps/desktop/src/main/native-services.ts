@@ -70,6 +70,7 @@ export interface DesktopPreferences {
   appshotHotkeyTrigger: MacInputBareModifier
   autoCheckForUpdates: boolean
   autoDownloadUpdates: boolean
+  externalTerminalApp: string | null
 }
 
 export type NativeAuthCapabilityReason = 'available' | 'unsupported-platform' | 'unavailable'
@@ -90,6 +91,24 @@ export interface NativeAuthAuthenticateResult {
   status: NativeAuthAuthenticateStatus
   method: 'local-authentication' | null
   message?: string
+}
+
+/**
+ * Read the user's preferred external terminal app name from the server-owned
+ * desktop preferences file. Returns undefined when unset (or unreadable), so the
+ * launcher falls back to the platform default. Read on demand rather than cached
+ * so it always reflects the latest value written by the server.
+ */
+async function readExternalTerminalApp(): Promise<string | undefined> {
+  const filePath = join(app.getPath('userData'), 'data', 'preferences', 'desktop.json')
+  try {
+    const raw = await readFile(filePath, 'utf8')
+    const value = (JSON.parse(raw) as { externalTerminalApp?: unknown }).externalTerminalApp
+    return typeof value === 'string' && value.trim().length > 0 ? value : undefined
+  }
+  catch {
+    return undefined
+  }
 }
 
 const MAX_CODEX_APP_CAPTURE_BYTES = 25 * 1024 * 1024
@@ -264,7 +283,7 @@ class NativeService extends IpcService {
   @IpcMethod()
   async openPathInTerminal(fullPath: string): Promise<{ terminal: string }> {
     const resolvedPath = await validateNativeDirectory(fullPath)
-    const terminal = await launchPathInTerminal(resolvedPath)
+    const terminal = await launchPathInTerminal(resolvedPath, await readExternalTerminalApp())
     return { terminal }
   }
 

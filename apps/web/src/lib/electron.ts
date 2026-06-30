@@ -238,6 +238,7 @@ export interface DesktopPreferences {
   appshotHotkeyTrigger: MacInputBareModifier
   autoCheckForUpdates: boolean
   autoDownloadUpdates: boolean
+  externalTerminalApp: string | null
 }
 
 interface WindowServiceMethods {

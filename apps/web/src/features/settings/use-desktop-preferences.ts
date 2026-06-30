@@ -13,6 +13,7 @@ export interface DesktopPreferences {
   autoCheckForUpdates: boolean
   autoDownloadUpdates: boolean
   lastSeenChangelogVersion: string | null
+  externalTerminalApp: string | null
 }
 
 const DesktopPreferencesSchema = z.object({
@@ -22,6 +23,7 @@ const DesktopPreferencesSchema = z.object({
   autoCheckForUpdates: z.boolean().default(true),
   autoDownloadUpdates: z.boolean().default(false),
   lastSeenChangelogVersion: z.string().nullable().default(null),
+  externalTerminalApp: z.string().nullable().default(null),
 })
 
 export const DESKTOP_PREFS_QUERY_KEY = getPreferencesDesktopQueryKey()

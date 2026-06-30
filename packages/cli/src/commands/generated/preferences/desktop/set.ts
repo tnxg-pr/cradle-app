@@ -51,6 +51,12 @@ const spec = {
       "required": true,
       "target": "body.lastSeenChangelogVersion",
       "type": "string"
+    },
+    {
+      "name": "externalTerminalApp",
+      "required": true,
+      "target": "body.externalTerminalApp",
+      "type": "string"
     }
   ],
   "method": "put",
