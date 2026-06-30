@@ -146,6 +146,7 @@ export type IssueActivityField
     | 'priority'
     | 'status'
     | 'title'
+    | 'workspace'
 
 export type IssueActivityAction
   = | 'added-description'
@@ -508,6 +509,94 @@ function getIssueRow(id: string): Issue {
   return issue
 }
 
+function requireMilestoneInWorkspace(workspaceId: string, milestoneId: string | null): string | null {
+  if (milestoneId === null) {
+    return null
+  }
+  const milestone = db()
+    .select({ id: issueMilestones.id })
+    .from(issueMilestones)
+    .where(and(eq(issueMilestones.id, milestoneId), eq(issueMilestones.workspaceId, workspaceId)))
+    .get()
+  if (!milestone) {
+    throw new AppError({
+      code: 'issue_milestone_not_found',
+      status: 404,
+      message: 'Milestone not found',
+      details: { workspaceId, milestoneId },
+    })
+  }
+  return milestone.id
+}
+
+function issueMilestoneBelongsToWorkspace(milestoneId: string, workspaceId: string): boolean {
+  const row = db()
+    .select({ id: issueMilestones.id })
+    .from(issueMilestones)
+    .where(and(eq(issueMilestones.id, milestoneId), eq(issueMilestones.workspaceId, workspaceId)))
+    .get()
+  return row !== undefined
+}
+
+function issueBelongsToWorkspace(issueId: string, workspaceId: string): boolean {
+  const row = db()
+    .select({ id: issues.id })
+    .from(issues)
+    .where(and(eq(issues.id, issueId), eq(issues.workspaceId, workspaceId)))
+    .get()
+  return row !== undefined
+}
+
+function requireParentIssueInWorkspace(workspaceId: string, parentIssueId: string | null, issueId?: string): string | null {
+  if (parentIssueId === null) {
+    return null
+  }
+  if (parentIssueId === issueId) {
+    throw new AppError({
+      code: 'issue_parent_self_reference',
+      status: 400,
+      message: 'Issue cannot be its own parent',
+      details: { issueId, parentIssueId },
+    })
+  }
+  if (!issueBelongsToWorkspace(parentIssueId, workspaceId)) {
+    throw new AppError({
+      code: 'issue_parent_not_found',
+      status: 404,
+      message: 'Parent issue not found',
+      details: { workspaceId, parentIssueId },
+    })
+  }
+  return parentIssueId
+}
+
+function nextIssueNumber(workspaceId: string): number {
+  const maxNumberRow = db()
+    .select({ maxNum: sql<number>`coalesce(max(${issues.number}), 0)` })
+    .from(issues)
+    .where(eq(issues.workspaceId, workspaceId))
+    .get()
+  return (maxNumberRow?.maxNum ?? 0) + 1
+}
+
+function nextIssueOrder(workspaceId: string): number {
+  const maxOrderRow = db()
+    .select({ maxOrder: sql<number>`coalesce(max(${issues.order}), 0)` })
+    .from(issues)
+    .where(eq(issues.workspaceId, workspaceId))
+    .get()
+  return (maxOrderRow?.maxOrder ?? 0) + 1024
+}
+
+function hasIssueNumberConflict(workspaceId: string, number: number, issueId: string): boolean {
+  const row = db()
+    .select({ id: issues.id })
+    .from(issues)
+    .where(and(eq(issues.workspaceId, workspaceId), eq(issues.number, number)))
+    .get()
+  return row !== undefined && row.id !== issueId
+}
+
 export function getIssue(id: string): IssueView {
   return toIssueView(getIssueRow(id))
 }
@@ -556,9 +645,10 @@ export function createIssue(rawInput: {
   const workspace = requireWorkspace(input.workspaceId)
   const now = currentUnixSeconds()
   const identity = nextIssueIdentity(workspace)
-  const maxOrderRow = db().select({ maxOrder: sql<number>`coalesce(max(${issues.order}), 0)` }).from(issues).where(eq(issues.workspaceId, input.workspaceId)).get()
-  const order = (maxOrderRow?.maxOrder ?? 0) + 1024
+  const order = nextIssueOrder(input.workspaceId)
   const statusId = resolveStatusId(input.workspaceId, input, { useDefaultWhenMissing: true })
+  const milestoneId = requireMilestoneInWorkspace(input.workspaceId, input.milestoneId)
+  const parentIssueId = requireParentIssueInWorkspace(input.workspaceId, input.parentIssueId, identity.id)
   const issue = db().insert(issues).values({
     id: identity.id,
     workspaceId: input.workspaceId,
@@ -566,8 +656,8 @@ export function createIssue(rawInput: {
     description: input.description,
     priority: input.priority,
     labels: JSON.stringify(input.labels),
-    milestoneId: input.milestoneId,
-    parentIssueId: input.parentIssueId,
+    milestoneId,
+    parentIssueId,
     statusId,
     number: identity.number,
     assigneeKind: input.assigneeKind,
@@ -587,6 +677,7 @@ export function createIssue(rawInput: {
 }
 
 const TRACKED_FIELDS = [
+  'workspaceId',
   'title',
   'description',
   'priority',
@@ -641,6 +732,7 @@ function recordFieldChanges(issueId: string, before: Issue, updates: Record<stri
 }
 
 export function updateIssue(id: string, patch: Partial<{
+  workspaceId: string
   title: string
   description: string | null
   priority: 'none' | 'low' | 'medium' | 'high' | 'urgent'
@@ -655,7 +747,34 @@ export function updateIssue(id: string, patch: Partial<{
   order: number
 }>, actor: MutationActor | IssueMutationActor = { kind: 'user', id: '__self__' }): IssueView {
   const issue = getIssueRow(id)
+  const targetWorkspaceId = patch.workspaceId ?? issue.workspaceId
+  const workspaceChanged = targetWorkspaceId !== issue.workspaceId
   const updates: Record<string, unknown> = { updatedAt: currentUnixSeconds() }
+  if ('workspaceId' in patch) {
+    requireWorkspace(targetWorkspaceId)
+    updates.workspaceId = targetWorkspaceId
+  }
+  if (workspaceChanged) {
+    if (!('statusId' in patch) && !('statusName' in patch)) {
+      updates.statusId = resolveStatusId(targetWorkspaceId, {}, { useDefaultWhenMissing: true })
+    }
+    if (!('milestoneId' in patch)) {
+      updates.milestoneId = issue.milestoneId && issueMilestoneBelongsToWorkspace(issue.milestoneId, targetWorkspaceId)
+        ? issue.milestoneId
+        : null
+    }
+    if (!('parentIssueId' in patch)) {
+      updates.parentIssueId = issue.parentIssueId && issueBelongsToWorkspace(issue.parentIssueId, targetWorkspaceId)
+        ? issue.parentIssueId
+        : null
+    }
+    if (patch.order === undefined) {
+      updates.order = nextIssueOrder(targetWorkspaceId)
+    }
+    if (hasIssueNumberConflict(targetWorkspaceId, issue.number, issue.id)) {
+      updates.number = nextIssueNumber(targetWorkspaceId)
+    }
+  }
   if (patch.title !== undefined) {
     updates.title = patch.title
   }
@@ -669,13 +788,13 @@ export function updateIssue(id: string, patch: Partial<{
     updates.labels = JSON.stringify(patch.labels)
   }
   if ('milestoneId' in patch) {
-    updates.milestoneId = patch.milestoneId ?? null
+    updates.milestoneId = requireMilestoneInWorkspace(targetWorkspaceId, patch.milestoneId ?? null)
   }
   if ('parentIssueId' in patch) {
-    updates.parentIssueId = patch.parentIssueId ?? null
+    updates.parentIssueId = requireParentIssueInWorkspace(targetWorkspaceId, patch.parentIssueId ?? null, id)
   }
   if ('statusId' in patch || 'statusName' in patch) {
-    updates.statusId = resolveStatusId(issue.workspaceId, patch, { useDefaultWhenMissing: false })
+    updates.statusId = resolveStatusId(targetWorkspaceId, patch, { useDefaultWhenMissing: false })
   }
   if ('assigneeKind' in patch) {
     updates.assigneeKind = patch.assigneeKind ?? null
@@ -718,6 +837,7 @@ const ACTIVITY_FIELD_BY_RAW_FIELD: Record<string, IssueActivityField> = {
   priority: 'priority',
   statusId: 'status',
   title: 'title',
+  workspaceId: 'workspace',
 }
 
 const PRIORITY_ACTIVITY_VALUE_TOKEN: Record<string, IssueActivityValueToken> = {
@@ -733,6 +853,7 @@ interface IssueActivityLookup {
   issueById: Map<string, Pick<Issue, 'id' | 'title'>>
   milestoneById: Map<string, Pick<IssueMilestone, 'id' | 'title'>>
   statusById: Map<string, Pick<IssueStatus, 'id' | 'name'>>
+  workspaceById: Map<string, Pick<Workspace, 'id' | 'name'>>
 }
 
 export function listActivity(issueId: string): IssueActivityItemView[] {
@@ -784,7 +905,6 @@ function buildActivityLookup(issue: Issue): IssueActivityLookup {
       title: issues.title,
     })
     .from(issues)
-    .where(eq(issues.workspaceId, issue.workspaceId))
     .all()
   const workspaceMilestones = db()
     .select({
@@ -792,7 +912,6 @@ function buildActivityLookup(issue: Issue): IssueActivityLookup {
       title: issueMilestones.title,
     })
     .from(issueMilestones)
-    .where(eq(issueMilestones.workspaceId, issue.workspaceId))
     .all()
   const workspaceStatuses = db()
     .select({
@@ -800,7 +919,13 @@ function buildActivityLookup(issue: Issue): IssueActivityLookup {
       name: issueStatuses.name,
     })
     .from(issueStatuses)
-    .where(eq(issueStatuses.workspaceId, issue.workspaceId))
+    .all()
+  const workspaceRows = db()
+    .select({
+      id: workspaces.id,
+      name: workspaces.name,
+    })
+    .from(workspaces)
     .all()
 
   return {
@@ -808,6 +933,7 @@ function buildActivityLookup(issue: Issue): IssueActivityLookup {
     issueById: new Map(workspaceIssues.map(row => [row.id, row])),
     milestoneById: new Map(workspaceMilestones.map(row => [row.id, row])),
     statusById: new Map(workspaceStatuses.map(row => [row.id, row])),
+    workspaceById: new Map(workspaceRows.map(row => [row.id, row])),
   }
 }
 
@@ -963,6 +1089,12 @@ function formatActivityFieldValue(
     case 'title':
       return formatPlainActivityValue(value)
 
+    case 'workspace':
+      if (isEmptyActivityValue(value)) {
+        return activityToken('empty')
+      }
+      return activityText(lookup.workspaceById.get(value)?.name ?? null) ?? formatPlainActivityValue(value)
+
     default:
       return formatPlainActivityValue(value)
   }
@@ -1115,6 +1247,12 @@ export function bulkUpdateIssues(issueIds: string[], update: {
     .all()
 
   for (const issue of beforeRows) {
+    if ('statusId' in update && update.statusId !== null && update.statusId !== undefined) {
+      resolveStatusId(issue.workspaceId, { statusId: update.statusId }, { useDefaultWhenMissing: false })
+    }
+    if ('milestoneId' in update) {
+      requireMilestoneInWorkspace(issue.workspaceId, update.milestoneId ?? null)
+    }
     recordFieldChanges(issue.id, issue, updates, actor)
   }
 

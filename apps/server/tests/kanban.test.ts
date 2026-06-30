@@ -623,6 +623,126 @@ describe('kanban capability', () => {
     }
   })
 
+  it('moves an issue to another workspace and resets workspace-owned references', async () => {
+    const dataDir = makeTempDir('cradle-data-')
+    const sourceWorkspaceRoot = makeTempDir('cradle-workspace-')
+    const targetWorkspaceRoot = makeTempDir('cradle-workspace-')
+    const previousDataDir = process.env.CRADLE_DATA_DIR
+    process.env.CRADLE_DATA_DIR = dataDir
+    let app: Awaited<ReturnType<typeof createServerApp>> | undefined
+
+    try {
+      app = await createServerApp({ startBackgroundTasks: false })
+      db().insert(workspaces).values([
+        {
+          id: 'workspace-source',
+          name: 'Source Workspace',
+          identifier: 'SRC',
+          path: sourceWorkspaceRoot,
+          locatorJson: JSON.stringify({ hostId: 'local', path: sourceWorkspaceRoot }),
+        },
+        {
+          id: 'workspace-target',
+          name: 'Target Workspace',
+          identifier: 'TGT',
+          path: targetWorkspaceRoot,
+          locatorJson: JSON.stringify({ hostId: 'local', path: targetWorkspaceRoot }),
+        },
+      ]).run()
+
+      const sourceStatusesRes = await app.handle(new Request('http://localhost/issues/statuses?workspaceId=workspace-source'))
+      expect(sourceStatusesRes.status).toBe(200)
+      const sourceStatuses = await sourceStatusesRes.json() as KanbanStatus[]
+      const sourceTodoStatusId = sourceStatuses.find(status => status.name === 'To Do')?.id
+      expect(sourceTodoStatusId).toBeTruthy()
+
+      const targetStatusesRes = await app.handle(new Request('http://localhost/issues/statuses?workspaceId=workspace-target'))
+      expect(targetStatusesRes.status).toBe(200)
+      const targetStatuses = await targetStatusesRes.json() as KanbanStatus[]
+      const targetBacklogStatusId = targetStatuses.find(status => status.name === 'Backlog')?.id
+      expect(targetBacklogStatusId).toBeTruthy()
+
+      for (const title of ['Target one', 'Target two']) {
+        const response = await app.handle(new Request('http://localhost/issues', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ workspaceId: 'workspace-target', title }),
+        }))
+        expect(response.status).toBe(200)
+      }
+
+      const milestoneRes = await app.handle(new Request('http://localhost/issues/milestones', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workspaceId: 'workspace-source', title: 'Source milestone' }),
+      }))
+      expect(milestoneRes.status).toBe(200)
+      const milestone = await milestoneRes.json() as { id: string }
+
+      const parentRes = await app.handle(new Request('http://localhost/issues', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workspaceId: 'workspace-source', title: 'Source parent' }),
+      }))
+      expect(parentRes.status).toBe(200)
+      const parent = await parentRes.json() as Issue
+
+      const issueRes = await app.handle(new Request('http://localhost/issues', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId: 'workspace-source',
+          title: 'Move me',
+          statusId: sourceTodoStatusId,
+          milestoneId: milestone.id,
+          parentIssueId: parent.id,
+        }),
+      }))
+      expect(issueRes.status).toBe(200)
+      const issue = await issueRes.json() as Issue & { milestoneId: string, parentIssueId: string }
+      expect(issue).toEqual(expect.objectContaining({
+        id: 'SRC-002',
+        number: 2,
+        workspaceId: 'workspace-source',
+        milestoneId: milestone.id,
+        parentIssueId: parent.id,
+      }))
+
+      const moveRes = await app.handle(new Request(`http://localhost/issues/${issue.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workspaceId: 'workspace-target' }),
+      }))
+      expect(moveRes.status).toBe(200)
+      const moved = await moveRes.json() as Issue & { milestoneId: string | null, parentIssueId: string | null }
+      expect(moved).toEqual(expect.objectContaining({
+        id: 'SRC-002',
+        number: 3,
+        workspaceId: 'workspace-target',
+        statusId: targetBacklogStatusId,
+        milestoneId: null,
+        parentIssueId: null,
+      }))
+
+      const activityRes = await app.handle(new Request(`http://localhost/issues/${issue.id}/activity`))
+      expect(activityRes.status).toBe(200)
+      const activity = await activityRes.json() as Array<{ fieldChange: { field: string | null } | null }>
+      expect(activity.some(item => item.fieldChange?.field === 'workspace')).toBe(true)
+    }
+    finally {
+      shutdownInfra()
+      rmSync(dataDir, { recursive: true, force: true })
+      rmSync(sourceWorkspaceRoot, { recursive: true, force: true })
+      rmSync(targetWorkspaceRoot, { recursive: true, force: true })
+      if (previousDataDir === undefined) {
+        delete process.env.CRADLE_DATA_DIR
+      }
+      else {
+        process.env.CRADLE_DATA_DIR = previousDataDir
+      }
+    }
+  })
+
   it('returns structured errors for invalid input and missing resources', async () => {
     const dataDir = makeTempDir('cradle-data-')
     const workspaceRoot = makeTempDir('cradle-workspace-')

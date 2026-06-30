@@ -18,6 +18,14 @@ const spec = {
   "description": "Update issue",
   "flags": [
     {
+      "description": "Defaults to CRADLE_WORKSPACE_ID.",
+      "name": "workspaceId",
+      "required": false,
+      "target": "body.workspaceId",
+      "type": "string",
+      "envDefault": "CRADLE_WORKSPACE_ID"
+    },
+    {
       "name": "title",
       "required": false,
       "target": "body.title",

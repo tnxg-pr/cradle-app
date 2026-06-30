@@ -56,6 +56,14 @@ const spec = {
       "required": false,
       "target": "body.providerTargetId",
       "type": "string"
+    },
+    {
+      "description": "Defaults to CRADLE_WORKSPACE_ID.",
+      "name": "workspaceId",
+      "required": false,
+      "target": "body.workspaceId",
+      "type": "string",
+      "envDefault": "CRADLE_WORKSPACE_ID"
     }
   ],
   "method": "post",

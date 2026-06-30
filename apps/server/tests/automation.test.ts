@@ -225,6 +225,112 @@ describe('automation capability', () => {
     }
   })
 
+  it('exposes Yansu cron-compatible routes backed by Automation ownership', async () => {
+    const dataDir = makeTempDir('cradle-data-')
+    const workspaceRoot = makeTempDir('cradle-workspace-')
+    const previousDataDir = process.env.CRADLE_DATA_DIR
+    const previousSecret = process.env.CRADLE_CREDENTIAL_SECRET
+    process.env.CRADLE_DATA_DIR = dataDir
+    process.env.CRADLE_CREDENTIAL_SECRET = 'automation-secret'
+    let app: ElysiaApp | undefined
+
+    try {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const url = new Request(input).url
+        if (url.endsWith('/chat/completions')) {
+          return buildSseResponse([
+            'data: {"id":"chunk-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"Scheduled report"},"finish_reason":null}]}\n\n',
+            'data: {"id":"chunk-2","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":2,"total_tokens":14}}\n\n',
+            'data: [DONE]\n\n',
+          ])
+        }
+        return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+      })
+
+      app = await createServerApp({ startBackgroundTasks: false })
+      db().insert(workspaces).values({
+        id: 'workspace-automation',
+        name: 'Workspace Automation',
+        path: workspaceRoot,
+      }).run()
+      await createProfile(app, 'profile-automation')
+
+      const createRes = await app.handle(new Request('http://localhost/cron/jobs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 'cron-weekly-report',
+          workspaceId: 'workspace-automation',
+          title: 'Cron weekly report',
+          description: 'Yansu-compatible cron facade',
+          scheduleKind: 'rrule',
+          scheduleConfig: 'FREQ=WEEKLY;BYDAY=TU;BYHOUR=10;BYMINUTE=0;BYSECOND=0',
+          timezone: 'Asia/Shanghai',
+          prompt: 'Write the cron report.',
+          providerTargetId: 'profile-automation',
+          modelId: 'gpt-4o-mini',
+        }),
+      }))
+      expect(createRes.status).toBe(200)
+      expect(await createRes.json()).toEqual(expect.objectContaining({
+        id: 'cron-weekly-report',
+        automationDefinitionId: 'cron-weekly-report',
+        scheduleKind: 'rrule',
+        scheduleConfig: 'FREQ=WEEKLY;BYDAY=TU;BYHOUR=10;BYMINUTE=0;BYSECOND=0',
+        prompt: 'Write the cron report.',
+      }))
+
+      const listRes = await app.handle(new Request('http://localhost/cron/jobs?workspaceId=workspace-automation'))
+      expect(listRes.status).toBe(200)
+      expect(await listRes.json()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'cron-weekly-report' }),
+      ]))
+
+      const updateRes = await app.handle(new Request('http://localhost/cron/jobs/cron-weekly-report', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Renamed cron report',
+          enabled: false,
+          prompt: 'Write the renamed cron report.',
+        }),
+      }))
+      expect(updateRes.status).toBe(200)
+      expect(await updateRes.json()).toEqual(expect.objectContaining({
+        title: 'Renamed cron report',
+        enabled: false,
+        prompt: 'Write the renamed cron report.',
+        nextRunAt: null,
+      }))
+
+      const getRes = await app.handle(new Request('http://localhost/cron/jobs/cron-weekly-report'))
+      expect(getRes.status).toBe(200)
+      expect(await getRes.json()).toEqual(expect.objectContaining({
+        id: 'cron-weekly-report',
+        enabled: false,
+      }))
+
+      const runsRes = await app.handle(new Request('http://localhost/cron/runs?jobId=cron-weekly-report'))
+      expect(runsRes.status).toBe(200)
+      expect(await runsRes.json()).toEqual([])
+
+      const deleteRes = await app.handle(new Request('http://localhost/cron/jobs/cron-weekly-report', {
+        method: 'DELETE',
+      }))
+      expect(deleteRes.status).toBe(200)
+      expect(await deleteRes.json()).toEqual({ ok: true })
+    }
+    finally {
+      shutdownInfra()
+      rmSync(dataDir, { recursive: true, force: true })
+      rmSync(workspaceRoot, { recursive: true, force: true })
+      if (previousDataDir === undefined) { delete process.env.CRADLE_DATA_DIR }
+      else { process.env.CRADLE_DATA_DIR = previousDataDir }
+      if (previousSecret === undefined) { delete process.env.CRADLE_CREDENTIAL_SECRET }
+      else { process.env.CRADLE_CREDENTIAL_SECRET = previousSecret }
+    }
+  })
+
   it('computes RRULE due occurrences and deduplicates scheduled enqueues', async () => {
     const due = listDueOccurrences({
       type: 'rrule',

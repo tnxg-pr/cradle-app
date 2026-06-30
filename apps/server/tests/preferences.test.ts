@@ -887,6 +887,8 @@ describe('preferences capability', () => {
         appshotHotkeyTrigger: 'DoubleCommand',
         autoCheckForUpdates: true,
         autoDownloadUpdates: false,
+        lastSeenChangelogVersion: null,
+        externalTerminalApp: null,
       })
 
       const filePath = join(dataDir, 'preferences', 'desktop.json')
@@ -912,6 +914,8 @@ describe('preferences capability', () => {
         appshotHotkeyTrigger: 'DoubleShift',
         autoCheckForUpdates: false,
         autoDownloadUpdates: true,
+        lastSeenChangelogVersion: null,
+        externalTerminalApp: null,
       })
 
       const finalRes = await app.handle(new Request('http://localhost/preferences/desktop'))
@@ -922,6 +926,8 @@ describe('preferences capability', () => {
         appshotHotkeyTrigger: 'DoubleShift',
         autoCheckForUpdates: false,
         autoDownloadUpdates: true,
+        lastSeenChangelogVersion: null,
+        externalTerminalApp: null,
       })
     }
     finally {

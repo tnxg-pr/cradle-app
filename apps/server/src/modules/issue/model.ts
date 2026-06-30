@@ -67,6 +67,7 @@ const issueActivityFieldEnum = t.Union([
   t.Literal('priority'),
   t.Literal('status'),
   t.Literal('title'),
+  t.Literal('workspace'),
 ])
 
 const issueActivityActionEnum = t.Union([
@@ -264,6 +265,7 @@ export const IssueModel = {
   }),
 
   updateIssueBody: t.Object({
+    workspaceId: t.Optional(t.String({ minLength: 1 })),
     title: t.Optional(t.String({ minLength: 1 })),
     description: t.Optional(t.Nullable(t.String())),
     priority: t.Optional(priorityEnum),
