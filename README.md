@@ -49,6 +49,13 @@ Cradle is a desktop-first platform for managing AI agents and their workflows. I
 | `@cradleapp/cc-switch` | Maps CC Switch provider data into Cradle as a read-only external provider source. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
 | `@cradleapp/nowledge-mem` | Official Nowledge Mem adapter for guided memory, Working Memory, thread, and context operations. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
 
+
+## Packages
+
+| Package | Description | Status |
+|---|---|---|
+| [`@cradle/ipc`](./packages/ipc) [^ipc-decorator] | Type-safe IPC communication layer for Electron apps, built on top of `electron-ipc-decorator`. Provides a structured way to define IPC services with decorators, automatic type inference, and error handling. | ![Stable](https://img.shields.io/badge/status-Stable-green) |
+
 ## Feedback
 
 Have ideas, suggestions, or feedback? Join the Telegram channel [@wibusChannel](https://t.me/wibusChannel), or open an issue on GitHub.
@@ -70,3 +77,6 @@ I have been deeply inspired by the following projects and communities:
 Cradle © Wibus. Created on Apr 25, 2026.
 
 > [Personal Website](http://wibus.ren/) · [Blog](https://blog.wibus.ren/) · GitHub [@wibus-wee](https://github.com/wibus-wee/) · Telegram [@wibus✪](https://t.me/wibus_wee)
+
+
+[^ipc-decorator]: Thanks to [Innei/electron-ipc-decorator](https://github.com/Innei/electron-ipc-decorator) for the IPC decorator inspiration and some utility code patterns.
