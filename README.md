@@ -50,11 +50,16 @@ Cradle is a desktop-first platform for managing AI agents and their workflows. I
 | `@cradleapp/nowledge-mem` | Official Nowledge Mem adapter for guided memory, Working Memory, thread, and context operations. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
 
 
+
 ## Packages
 
 | Package | Description | Status |
 |---|---|---|
+| [`@cradle/cli`](./packages/cli) | Generated-first TypeScript CLI for Cradle. Commands are auto-generated from the server OpenAPI spec via `pnpm gen:cli`. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
 | [`@cradle/ipc`](./packages/ipc) [^ipc-decorator] | Type-safe IPC communication layer for Electron apps, built on top of `electron-ipc-decorator`. Provides a structured way to define IPC services with decorators, automatic type inference, and error handling. | ![Stable](https://img.shields.io/badge/status-Stable-green) |
+| [`@cradle/plugin-sdk`](./packages/plugin-sdk) | SDK for building Cradle plugins — manifest types, permission system, and platform-specific entry points (server, web, desktop). | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
+| [`@cradle/streamdown`](./packages/streamdown) | Streaming markdown renderer with CPS smoothing, block-level FSM, and animated text reveal. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
+
 
 ## Feedback
 
