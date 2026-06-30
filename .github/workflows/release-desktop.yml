@@ -76,7 +76,7 @@ jobs:
               if [[ "$INPUT_VERSION" =~ $semver_regex ]]; then
                 DESKTOP_VERSION="$INPUT_VERSION"
               else
-                DESKTOP_VERSION="0.0.0-bleeding-edge.${INPUT_VERSION}"
+                DESKTOP_VERSION="0.0.0-${INPUT_VERSION}"
               fi
               RELEASE_TAG="bleeding-edge-${DISPLAY_VERSION}"
             else
@@ -85,10 +85,12 @@ jobs:
               RELEASE_TAG="v${DISPLAY_VERSION}"
             fi
           elif [ "${{ github.ref_type }}" = "branch" ]; then
+            SHORT_SHA="${{ github.sha }}"
+            SHORT_SHA="${SHORT_SHA:0:7}"
             CHANNEL="bleeding-edge"
-            DISPLAY_VERSION="${{ github.sha }}"
-            DESKTOP_VERSION="0.0.0-bleeding-edge.${{ github.sha }}"
-            RELEASE_TAG="bleeding-edge-${{ github.sha }}"
+            DISPLAY_VERSION="$SHORT_SHA"
+            DESKTOP_VERSION="0.0.0-$SHORT_SHA"
+            RELEASE_TAG="bleeding-edge-$SHORT_SHA"
             SOURCE_REF="main"
           else
             TAG="${GITHUB_REF_NAME}"

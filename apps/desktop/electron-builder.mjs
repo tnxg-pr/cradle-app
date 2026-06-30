@@ -226,6 +226,7 @@ const config = {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
     artifactName: '${productName}-setup.${ext}',
+    include: 'build/installer.nsh',
   },
 }
 
