@@ -268,6 +268,8 @@ jobs:
 
       - name: Package unpacked Windows app
         working-directory: apps/desktop
+        env:
+          CRADLE_DESKTOP_UPDATE_URL: ${{ needs.resolve.outputs.update_url }}
         run: pnpm exec electron-builder --config electron-builder.mjs --win --x64 --dir --publish never
 
       - name: Verify native resources are Windows binaries
@@ -383,6 +385,8 @@ jobs:
 
       - name: Build Windows installer
         working-directory: apps/desktop
+        env:
+          CRADLE_DESKTOP_UPDATE_URL: ${{ needs.resolve.outputs.update_url }}
         run: pnpm exec electron-builder --config electron-builder.mjs --win nsis --x64 --publish never --config.compression=normal
 
       - name: Install Windows installer silently
