@@ -4,7 +4,7 @@ set -u
 
 APP_NAME="Cradle"
 APP_BUNDLE="Cradle.app"
-DEFAULT_GITHUB_REPO="wibus-wee/Cradle"
+DEFAULT_GITHUB_REPO="wibus-wee/cradle-app"
 INSTALL_DIR="${CRADLE_INSTALL_DIR:-/Applications}"
 DEST_APP="${INSTALL_DIR}/${APP_BUNDLE}"
 SCRIPT_PATH="${BASH_SOURCE[0]}"

@@ -18,7 +18,7 @@ import {
 } from './plugin-install-links'
 
 const tempRoots: string[] = []
-const installUrl = 'cradle://plugins/install?source=github&repository=wibus-wee%2FCradle&path=plugins%2Fsystem-info&package=%40cradle%2Fsystem-info&version=0.0.1&channel=bundled'
+const installUrl = 'cradle://plugins/install?source=github&repository=wibus-wee%2Fcradle-app&path=plugins%2Fsystem-info&package=%40cradle%2Fsystem-info&version=0.0.1&channel=bundled'
 const InstallReceiptJsonSchema = z.string().transform(raw => JSON.parse(raw)).pipe(z.object({
   mode: z.enum(['alreadyAvailable', 'downloaded']),
   packageName: z.string(),
@@ -83,7 +83,7 @@ async function writePluginPackage(
 
 async function createRepositoryArchive(): Promise<Buffer> {
   const root = await createTempRoot('cradle-plugin-archive-')
-  const repoRoot = resolve(root, 'wibus-wee-Cradle-testref')
+  const repoRoot = resolve(root, 'wibus-wee-cradle-app-testref')
   await writePluginPackage(repoRoot, 'plugins/system-info')
   const archivePath = resolve(root, 'repo.tar.gz')
   await tar.c(
@@ -92,7 +92,7 @@ async function createRepositoryArchive(): Promise<Buffer> {
       file: archivePath,
       gzip: true,
     },
-    ['wibus-wee-Cradle-testref'],
+    ['wibus-wee-cradle-app-testref'],
   )
   return readFile(archivePath)
 }
@@ -108,7 +108,7 @@ describe('parsePluginInstallUrl', () => {
   it('parses the documented first-party marketplace URL contract', () => {
     expect(parsePluginInstallUrl(installUrl)).toMatchObject({
       source: 'github',
-      repository: 'wibus-wee/Cradle',
+      repository: 'wibus-wee/cradle-app',
       path: 'plugins/system-info',
       packageName: '@cradle/system-info',
       version: '0.0.1',
@@ -120,7 +120,7 @@ describe('parsePluginInstallUrl', () => {
   it('rejects duplicate, unknown, cross-repository, and traversal parameters', () => {
     expect(() => parsePluginInstallUrl(`${installUrl}&package=%40cradle%2Fother`)).toThrow(PluginInstallLinkError)
     expect(() => parsePluginInstallUrl(`${installUrl}&token=secret`)).toThrow(PluginInstallLinkError)
-    expect(() => parsePluginInstallUrl(installUrl.replace('wibus-wee%2FCradle', 'other%2FCradle'))).toThrow(PluginInstallLinkError)
+    expect(() => parsePluginInstallUrl(installUrl.replace('wibus-wee%2Fcradle-app', 'other%2Fcradle-app'))).toThrow(PluginInstallLinkError)
     expect(() => parsePluginInstallUrl(installUrl.replace('plugins%2Fsystem-info', 'plugins%2F..%2Fsystem-info'))).toThrow(PluginInstallLinkError)
   })
 })
@@ -254,7 +254,7 @@ describe('installPluginFromRequest', () => {
   it('rejects source-only plugin entries before publishing the install', async () => {
     const userDataPath = await createTempRoot('cradle-plugin-user-data-')
     const root = await createTempRoot('cradle-plugin-source-archive-')
-    const repoRoot = resolve(root, 'wibus-wee-Cradle-source')
+    const repoRoot = resolve(root, 'wibus-wee-cradle-app-source')
     await writePluginPackage(repoRoot, 'plugins/system-info', '@cradle/system-info', 'src/server.ts')
     const archivePath = resolve(root, 'repo.tar.gz')
     await tar.c(
@@ -263,7 +263,7 @@ describe('installPluginFromRequest', () => {
         file: archivePath,
         gzip: true,
       },
-      ['wibus-wee-Cradle-source'],
+      ['wibus-wee-cradle-app-source'],
     )
     const archive = await readFile(archivePath)
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response(new Uint8Array(archive)))

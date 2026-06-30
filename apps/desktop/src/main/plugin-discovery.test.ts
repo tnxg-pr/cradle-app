@@ -38,7 +38,7 @@ async function writeDesktopPluginPackage(): Promise<string> {
       installedAt: '2026-05-21T10:00:00.000Z',
       mode: 'downloaded',
       source: 'github',
-      repository: 'wibus-wee/Cradle',
+      repository: 'wibus-wee/cradle-app',
       path: 'plugins/marketplace-plugin',
       packageName: '@cradle/marketplace-plugin',
       version: '1.2.3',
@@ -103,7 +103,7 @@ describe('desktop plugin discovery', () => {
     expect(result.descriptors[0]?.source.provenance).toMatchObject({
       kind: 'marketplace-install',
       mode: 'downloaded',
-      repository: 'wibus-wee/Cradle',
+      repository: 'wibus-wee/cradle-app',
       path: 'plugins/marketplace-plugin',
       packageName: '@cradle/marketplace-plugin',
       version: '1.2.3',

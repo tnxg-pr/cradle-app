@@ -42,7 +42,7 @@ When users open that DMG, they double-click `Install Cradle.command`. The comman
 You can also distribute `Install Cradle.command` without a payload. In that mode it downloads the best macOS `.dmg` or `.zip` asset from:
 
 ```text
-https://github.com/wibus-wee/Cradle/releases/latest
+https://github.com/wibus-wee/cradle-app/releases/latest
 ```
 
 Useful overrides:

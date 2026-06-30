@@ -28,7 +28,7 @@ const SUPPORTED_PARAMS = new Set([
 ])
 const REQUIRED_PARAMS = ['source', 'repository', 'path', 'package', 'version', 'channel'] as const
 const DEFAULT_GITHUB_REF = 'main'
-const FIRST_PARTY_REPOSITORY = 'wibus-wee/Cradle'
+const FIRST_PARTY_REPOSITORY = 'wibus-wee/cradle-app'
 
 export interface PluginInstallRequest {
   source: 'github'
