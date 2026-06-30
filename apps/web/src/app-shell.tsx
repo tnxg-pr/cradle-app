@@ -44,6 +44,11 @@ const StreamingChatRetentionHost = lazy(() =>
     default: module.StreamingChatRetentionHost,
   })))
 
+const KEY_BINDINGS_OVERLAY_HOLD_RELEASE_MIN_IDLE_MS = 44
+const KEY_BINDINGS_OVERLAY_HOLD_RELEASE_FALLBACK_IDLE_MS = 90
+const KEY_BINDINGS_OVERLAY_HOLD_RELEASE_MAX_IDLE_MS = 160
+const KEY_BINDINGS_OVERLAY_HOLD_RELEASE_IDLE_MULTIPLIER = 1.35
+
 function isKeyBindingsOverlayShortcut(event: KeyboardEvent): boolean {
   const isMod = event.metaKey || event.ctrlKey
   const isSlash = event.key === '/' || event.code === 'Slash'
@@ -52,6 +57,19 @@ function isKeyBindingsOverlayShortcut(event: KeyboardEvent): boolean {
 
 function isKeyBindingsOverlayShortcutRelease(event: KeyboardEvent): boolean {
   return event.key === '/' || event.code === 'Slash' || event.key === 'Meta' || event.key === 'Control'
+}
+
+function readKeyBindingsOverlayHoldReleaseIdleMs(repeatIntervalMs: number | null): number {
+  if (repeatIntervalMs === null || !Number.isFinite(repeatIntervalMs)) {
+    return KEY_BINDINGS_OVERLAY_HOLD_RELEASE_FALLBACK_IDLE_MS
+  }
+  return Math.max(
+    KEY_BINDINGS_OVERLAY_HOLD_RELEASE_MIN_IDLE_MS,
+    Math.min(
+      KEY_BINDINGS_OVERLAY_HOLD_RELEASE_MAX_IDLE_MS,
+      repeatIntervalMs * KEY_BINDINGS_OVERLAY_HOLD_RELEASE_IDLE_MULTIPLIER,
+    ),
+  )
 }
 
 function syncDesktopAppBadgeUnreadCount(count: number): void {
@@ -371,9 +389,39 @@ function KeyBindingsOverlayHost() {
   'use no memo'
 
   const open = useKeyBindingsOverlayStore(s => s.open)
-  const shortcutGestureRef = useRef<{ held: boolean, openedByPress: boolean } | null>(null)
+  const shortcutGestureRef = useRef<{
+    held: boolean
+    lastRepeatAt: number | null
+    openedByPress: boolean
+    repeatIntervalMs: number | null
+  } | null>(null)
+  const holdReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    const clearHoldReleaseTimer = (): void => {
+      if (holdReleaseTimerRef.current !== null) {
+        clearTimeout(holdReleaseTimerRef.current)
+        holdReleaseTimerRef.current = null
+      }
+    }
+
+    const closeHeldPeek = (): void => {
+      const currentGesture = shortcutGestureRef.current
+      shortcutGestureRef.current = null
+      clearHoldReleaseTimer()
+      if (currentGesture?.held && currentGesture.openedByPress) {
+        useKeyBindingsOverlayStore.getState().closeOverlay()
+      }
+    }
+
+    const scheduleHeldPeekRelease = (repeatIntervalMs: number | null): void => {
+      clearHoldReleaseTimer()
+      holdReleaseTimerRef.current = setTimeout(
+        closeHeldPeek,
+        readKeyBindingsOverlayHoldReleaseIdleMs(repeatIntervalMs),
+      )
+    }
+
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.isComposing) {
         return
@@ -391,17 +439,32 @@ function KeyBindingsOverlayHost() {
       const currentGesture = shortcutGestureRef.current
       if (event.repeat) {
         if (currentGesture) {
+          if (currentGesture.lastRepeatAt !== null) {
+            const intervalMs = event.timeStamp - currentGesture.lastRepeatAt
+            if (intervalMs > 0 && Number.isFinite(intervalMs)) {
+              currentGesture.repeatIntervalMs = currentGesture.repeatIntervalMs === null
+                ? intervalMs
+                : currentGesture.repeatIntervalMs * 0.6 + intervalMs * 0.4
+            }
+          }
+          currentGesture.lastRepeatAt = event.timeStamp
           currentGesture.held = true
+          if (currentGesture.openedByPress) {
+            scheduleHeldPeekRelease(currentGesture.repeatIntervalMs)
+          }
         }
         return
       }
 
+      clearHoldReleaseTimer()
       const store = useKeyBindingsOverlayStore.getState()
       if (store.open) {
         store.closeOverlay()
         shortcutGestureRef.current = {
           held: false,
+          lastRepeatAt: null,
           openedByPress: false,
+          repeatIntervalMs: null,
         }
         return
       }
@@ -410,7 +473,9 @@ function KeyBindingsOverlayHost() {
       store.openOverlay()
       shortcutGestureRef.current = {
         held: false,
+        lastRepeatAt: null,
         openedByPress: true,
+        repeatIntervalMs: null,
       }
     }
 
@@ -420,6 +485,7 @@ function KeyBindingsOverlayHost() {
         return
       }
 
+      clearHoldReleaseTimer()
       shortcutGestureRef.current = null
       if (currentGesture.held && currentGesture.openedByPress) {
         event.preventDefault()
@@ -430,6 +496,7 @@ function KeyBindingsOverlayHost() {
     const onBlur = (): void => {
       const currentGesture = shortcutGestureRef.current
       shortcutGestureRef.current = null
+      clearHoldReleaseTimer()
       if (currentGesture?.held && currentGesture.openedByPress) {
         useKeyBindingsOverlayStore.getState().closeOverlay()
       }
@@ -442,6 +509,7 @@ function KeyBindingsOverlayHost() {
       window.removeEventListener('keydown', onKeyDown, { capture: true })
       window.removeEventListener('keyup', onKeyUp, { capture: true })
       window.removeEventListener('blur', onBlur)
+      clearHoldReleaseTimer()
     }
   }, [])
 
