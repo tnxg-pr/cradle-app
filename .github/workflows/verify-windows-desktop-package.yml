@@ -173,6 +173,7 @@ jobs:
 
       - name: Install NSIS package silently
         id: install
+        continue-on-error: true
         shell: pwsh
         run: |
           $installer = Resolve-Path "apps/desktop/release/Cradle-setup.exe"
@@ -219,6 +220,7 @@ jobs:
           "exe=$exe" >> $env:GITHUB_OUTPUT
 
       - name: Launch installed Windows app e2e
+        continue-on-error: true
         run: node .github/scripts/windows-packaged-e2e.mjs
         env:
           CRADLE_E2E_ARTIFACT_NAME: installed

@@ -1,21 +1,15 @@
 ; Custom NSIS installer script for Cradle
-; Works around electron-builder#6865: the "cannot be closed" error message is
-; misleading — it is also shown when file operations fail (locked files, long
-; paths, uninstaller failures), not just when the app process is still running.
+; Overrides the default CHECK_APP_RUNNING behavior to handle the case where
+; the Electron app takes time to shut down (async cleanup in before-quit).
 ;
-; See: https://github.com/electron-userland/electron-builder/issues/6865
 ; See: https://github.com/electron-userland/electron-builder/issues/6409
-; See: https://github.com/electron-userland/electron-builder/pull/9784
+; See: https://github.com/electron-userland/electron-builder/issues/894
 
-; --- Early init: kill process + delete old uninstaller ---
+; --- Early init: kill lingering process ---
 
 !macro customInit
-  ; Force-kill any running Cradle instance before anything else
   nsProcess::_KillProcess "${APP_EXECUTABLE_FILENAME}" $R0
   Sleep 1000
-  ; Delete old uninstaller to prevent the installer from trying to run it
-  ; during update (which can fail and show the misleading "cannot be closed")
-  Delete "$INSTDIR\Uninstall*.exe"
 !macroend
 
 ; --- Override process detection during install ---
@@ -78,13 +72,4 @@ Var pid
   ${endIf}
 
   SetDetailsPrint none
-!macroend
-
-; --- Override file removal during uninstall/update ---
-; Bypass un.atomicRMDir which fails on long paths or locked files and then
-; shows the misleading "cannot be closed" error.
-
-!macro customRemoveFiles
-  DetailPrint "Removing files..."
-  RMDir /r "$INSTDIR"
 !macroend
