@@ -207,7 +207,13 @@ function hideExtension(dmgPath) {
       }
     }
   } finally {
-    try { execFileSync('/usr/bin/hdiutil', ['detach', mountDir, '-quiet'], { stdio: 'ignore' }) } catch {}
+    try {
+      execFileSync('/usr/bin/hdiutil', ['detach', mountDir, '-quiet'], { stdio: 'ignore' })
+    } catch {
+      // Force-detach if the normal detach fails (e.g. a background process still holds a handle)
+      try { execFileSync('/usr/bin/hdiutil', ['detach', mountDir, '-force', '-quiet'], { stdio: 'ignore' }) } catch {}
+    }
+    try { rmSync(mountDir, { recursive: true, force: true }) } catch {}
   }
 }
 
@@ -265,7 +271,28 @@ async function main() {
     hideExtension(rwDmg)
 
     console.log('Compressing DMG...')
-    execFileSync('/usr/bin/hdiutil', ['convert', rwDmg, '-format', 'UDZO', '-o', outputAbs], { stdio: 'ignore' })
+    // Flush filesystem buffers so the rw image is fully written before convert
+    try { execFileSync('/bin/sync', { stdio: 'ignore' }) } catch {}
+
+    // hdiutil convert can transiently fail on CI runners when a prior detach
+    // hasn't fully released the image.  Retry up to 3 times with a short delay.
+    let convertErr
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        execFileSync('/usr/bin/hdiutil', ['convert', rwDmg, '-format', 'UDZO', '-o', outputAbs], { stdio: 'pipe' })
+        convertErr = null
+        break
+      } catch (err) {
+        convertErr = err
+        const stderr = err.stderr?.toString?.() ?? ''
+        console.error(`hdiutil convert attempt ${attempt} failed${stderr ? `: ${stderr.trim()}` : ''}`)
+        if (attempt < 3) {
+          // Wait before retrying — gives APFS time to release the image
+          execFileSync('/bin/sleep', ['2'])
+        }
+      }
+    }
+    if (convertErr) throw convertErr
 
     console.log(`Wrote ${outputAbs}`)
   } finally {
