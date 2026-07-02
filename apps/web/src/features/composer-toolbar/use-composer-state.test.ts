@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { ModelDescriptor } from '~/features/agent-runtime/types'
 
-import { resolveChatModelId, selectChatThinkingEffort } from './use-composer-state'
+import { resolveChatModelId, resolveRuntimeOwnedChatProfileId, selectChatThinkingEffort } from './use-composer-state'
 
 function model(overrides: Partial<ModelDescriptor> & { id: string }): ModelDescriptor {
   return {
@@ -59,6 +59,49 @@ describe('resolveChatModelId', () => {
         model({ id: 'gpt-5.5' }),
       ],
     })).toBe('gpt-5.5')
+  })
+})
+
+describe('resolveRuntimeOwnedChatProfileId', () => {
+  it('restores an OpenCode runtime-native provider from a persisted provider/model id', () => {
+    expect(resolveRuntimeOwnedChatProfileId({
+      boundModelId: 'mimo/mimo-v2.5-pro-ultraspeed',
+      providerBinding: 'runtime-owned',
+      runtimeKind: 'opencode',
+      profiles: [
+        {
+          id: 'runtime-native:opencode:openai',
+          name: 'OpenCode / OpenAI',
+          providerKind: 'openai-compatible',
+          enabled: true,
+          iconSlug: 'opencode',
+        },
+        {
+          id: 'runtime-native:opencode:mimo',
+          name: 'OpenCode / Mimo',
+          providerKind: 'openai-compatible',
+          enabled: true,
+          iconSlug: 'opencode',
+        },
+      ],
+    })).toBe('runtime-native:opencode:mimo')
+  })
+
+  it('does not project normal provider-bound runtimes', () => {
+    expect(resolveRuntimeOwnedChatProfileId({
+      boundModelId: 'openai/gpt-5',
+      providerBinding: 'required',
+      runtimeKind: 'codex',
+      profiles: [
+        {
+          id: 'runtime-native:opencode:openai',
+          name: 'OpenCode / OpenAI',
+          providerKind: 'openai-compatible',
+          enabled: true,
+          iconSlug: 'opencode',
+        },
+      ],
+    })).toBeNull()
   })
 })
 

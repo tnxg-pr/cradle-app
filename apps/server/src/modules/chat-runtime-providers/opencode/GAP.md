@@ -160,7 +160,7 @@
 - API: `mcp.status()` — 读取当前 workspace directory 下 MCP server 状态
 - API: `mcp.add()`、`mcp.connect()`、`mcp.disconnect()`、`mcp.auth.start()`、`mcp.auth.callback()`、`mcp.auth.authenticate()`、`mcp.auth.remove()` — OpenCode 原生 MCP server 生命周期与 OAuth 管理
 
-**Cradle 接口**: Cradle 插件系统通过 `apps/server/src/plugins/mcp-registry.ts` 注册插件提供的 MCP server。Claude Agent 和 Codex provider 已经消费该 registry；OpenCode provider 现在也通过 `config.ts` 将同一 registry 投影成 OpenCode `Config.mcp`，并由 `runtime-context.ts` 通过 `OPENCODE_CONFIG_CONTENT` 注入共享 OpenCode server 的启动配置，避免在 active workspace directory 写入项目级 `config.json`。
+**Cradle 接口**: Cradle 插件系统通过 `apps/server/src/plugins/mcp-registry.ts` 注册插件提供的 MCP server。Claude Agent 和 Codex provider 已经消费该 registry；OpenCode provider 现在也通过 `config.ts` 将同一 registry 投影成 OpenCode `Config.mcp`，并由 `runtime-context.ts` 通过 `OPENCODE_CONFIG_CONTENT` 注入共享 OpenCode server 的启动配置。Cradle 同时把 OpenCode `cwd`、`OPENCODE_CONFIG_DIR`、`OPENCODE_DB` 隔离到 `CRADLE_DATA_DIR/runtime/opencode`，并设置 `OPENCODE_DISABLE_PROJECT_CONFIG=1`，避免在 active workspace directory 写入项目级 `config.json` 或复用用户全局 OpenCode DB。
 
 **当前状态**: 插件 MCP 已接入。stdio 插件 server 会投影为 OpenCode local MCP，command 为 `[command, ...args]`，env 会投影到 `environment`；streamable HTTP 插件 server 会投影为 OpenCode remote MCP，url 和 headers 会投影到 `url`/`headers`。`getUiSlotStates()` 仍通过 `mcp.status()` 读取状态。尚未实现的是面向用户的 Cradle MCP lifecycle UI/route：用户还不能在 Cradle 内对 OpenCode 调用 `mcp.add/connect/disconnect/auth.*`。
 

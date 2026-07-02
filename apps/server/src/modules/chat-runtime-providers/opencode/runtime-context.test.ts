@@ -1,7 +1,12 @@
 import type { Config } from '@opencode-ai/sdk'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { mergeOpencodeRuntimeConfig, resolveOpencodeRuntimeDirectory } from './runtime-context'
+import {
+  mergeOpencodeRuntimeConfig,
+  resolveOpencodeConfigDirectory,
+  resolveOpencodeDatabasePath,
+  resolveOpencodeRuntimeDirectory,
+} from './runtime-context'
 
 describe('mergeOpencodeRuntimeConfig', () => {
   it('merges provider and MCP entries without replacing unrelated runtime config', () => {
@@ -97,5 +102,7 @@ describe('resolveOpencodeRuntimeDirectory', () => {
     process.env.CRADLE_DATA_DIR = '/tmp/cradle-data'
 
     expect(resolveOpencodeRuntimeDirectory()).toBe('/tmp/cradle-data/runtime/opencode')
+    expect(resolveOpencodeConfigDirectory()).toBe('/tmp/cradle-data/runtime/opencode/config')
+    expect(resolveOpencodeDatabasePath()).toBe('/tmp/cradle-data/runtime/opencode/opencode.db')
   })
 })

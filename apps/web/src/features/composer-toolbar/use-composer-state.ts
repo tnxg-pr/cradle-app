@@ -61,6 +61,7 @@ export interface ComposerStateResult {
 }
 
 const EMPTY_MODELS: ModelDescriptor[] = []
+const OPENCODE_RUNTIME_NATIVE_PROVIDER_TARGET_PREFIX = 'runtime-native:opencode:'
 
 function readChatThinkingEffort(value: Agent['thinkingEffort'] | ThinkingEffort | null | undefined): ThinkingEffort {
   switch (value) {
@@ -100,6 +101,25 @@ export function resolveChatModelId(input: {
     return boundAgentModelId
   }
   return models[0]?.id ?? null
+}
+
+export function resolveRuntimeOwnedChatProfileId(input: {
+  boundModelId: string | null | undefined
+  profiles: ProviderModelOption[]
+  providerBinding: RuntimeProviderBinding
+  runtimeKind: RuntimeKind
+}): string | null {
+  if (input.providerBinding !== 'runtime-owned' || input.runtimeKind !== 'opencode') {
+    return null
+  }
+  const modelId = input.boundModelId
+  const slashIndex = modelId?.indexOf('/') ?? -1
+  if (!modelId || slashIndex <= 0) {
+    return null
+  }
+  const providerId = modelId.slice(0, slashIndex)
+  const profileId = `${OPENCODE_RUNTIME_NATIVE_PROVIDER_TARGET_PREFIX}${encodeURIComponent(providerId)}`
+  return input.profiles.some(profile => profile.id === profileId) ? profileId : null
 }
 
 export function selectChatThinkingEffort(input: {
@@ -337,10 +357,16 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
       return boundAgent.providerTargetId
     }
     if (context === 'chat') {
-      return boundProviderTargetId ?? pickComposerProfileId({ profiles: selectableProfiles, lastProfileId })
+      const runtimeOwnedProfileId = resolveRuntimeOwnedChatProfileId({
+        boundModelId,
+        profiles: selectableProfiles,
+        providerBinding,
+        runtimeKind,
+      })
+      return boundProviderTargetId ?? runtimeOwnedProfileId ?? pickComposerProfileId({ profiles: selectableProfiles, lastProfileId })
     }
     return pickComposerProfileId({ profiles: selectableProfiles, lastProfileId })
-  }, [runtimeKind, context, targetMode, selectedNewChatAgent, effectiveManualProfileId, boundAgent, boundProviderTargetId, lastProfileId, selectableProfiles])
+  }, [runtimeKind, context, targetMode, selectedNewChatAgent, effectiveManualProfileId, boundAgent, boundProviderTargetId, boundModelId, providerBinding, lastProfileId, selectableProfiles])
 
   const initialModelProfileIds = useMemo(() => [profileId], [profileId])
   const {

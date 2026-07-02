@@ -113,6 +113,7 @@ function createFakeResource(events: AsyncEventStream<OpencodeEvent>) {
     sessionTodoData: unknown[]
     sessionDiffData: unknown[]
     sessionGetData: unknown
+    sessionCreateData: unknown
     sessionChildrenData: unknown[]
     mcpStatusData: Record<string, unknown>
     fileStatusData: unknown[]
@@ -125,14 +126,28 @@ function createFakeResource(events: AsyncEventStream<OpencodeEvent>) {
     sessionTodoData: [],
     sessionDiffData: [],
     sessionGetData: null,
+    sessionCreateData: { id: 'ses_recovered' },
     sessionChildrenData: [],
     mcpStatusData: {},
     fileStatusData: [],
     appAgentsData: [],
   }
-  const promptAsync = vi.fn(async (_options: { body: { messageID?: string } }) => ({ data: undefined, error: undefined }))
-  const message = vi.fn(async () => ({
-    data: {
+  const promptAsync = vi.fn(async (_options: { body: { messageID?: string, agent?: string } }) => ({
+    data: undefined,
+    error: undefined,
+  }))
+  const message = vi.fn(async (options?: { path?: { messageID?: string } }) => ({
+    data: state.sessionMessagesData.find((entry) =>
+      Boolean(
+        entry
+        && typeof entry === 'object'
+        && 'info' in entry
+        && entry.info
+        && typeof entry.info === 'object'
+        && 'id' in entry.info
+        && entry.info.id === options?.path?.messageID,
+      ),
+    ) ?? {
       info: assistantMessage(),
       parts: [textPart()],
     },
@@ -141,6 +156,7 @@ function createFakeResource(events: AsyncEventStream<OpencodeEvent>) {
   const postPermission = vi.fn(async () => ({ data: true, error: undefined }))
   const session = {
     promptAsync,
+    create: vi.fn(async () => ({ data: state.sessionCreateData, error: undefined })),
     prompt: vi.fn(),
     command: vi.fn(),
     message,
@@ -476,7 +492,7 @@ describe('OpencodeProvider UI slot states', () => {
 })
 
 describe('OpencodeProvider streamTurn', () => {
-  it('uses promptAsync and closes from terminal OpenCode events', async () => {
+  it('uses promptAsync with the build agent and closes from terminal OpenCode events', async () => {
     const events = new AsyncEventStream<OpencodeEvent>()
     const fake = createFakeResource(events)
     const provider = new OpencodeProvider({ readSecret: () => 'secret' })
@@ -498,9 +514,64 @@ describe('OpencodeProvider streamTurn', () => {
     expect(promptCall).toBeDefined()
     const promptBody = promptCall![0].body
     expect(promptBody.messageID).toBe('msg_cradle_run_1')
+    expect(promptBody.agent).toBe('build')
     const assistant = assistantMessage({
       id: 'msg_assistant',
       parentID: promptBody.messageID,
+      time: { created: 1 },
+    })
+    events.push({ type: 'message.updated', properties: { info: assistant } })
+    events.push({ type: 'message.part.updated', properties: { part: textPart() } })
+    events.push({
+      type: 'message.updated',
+      properties: {
+        info: {
+          ...assistant,
+          time: { created: 1, completed: 2 },
+          finish: 'stop',
+        },
+      },
+    })
+
+    await expect(firstChunk).resolves.toMatchObject({ done: false, value: { type: 'text-start' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-delta', delta: 'Done.' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-end' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'finish' } })
+    await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('passes the plan agent for plan-mode turns', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    const provider = new OpencodeProvider({ readSecret: () => 'secret' })
+    const stream = provider.streamTurn({
+      runId: 'run-plan',
+      runtimeSession: createRuntimeSession(fake.resource),
+      profile: null,
+      message: {
+        id: 'user-1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Plan this' }],
+      },
+      workspacePath: '/tmp/workspace',
+      providerOptions: {
+        runtimeSettings: {
+          accessMode: 'full-access',
+          interactionMode: 'plan',
+        },
+      },
+    })
+
+    const firstChunk = stream.next()
+    await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(1))
+    const promptCall = fake.promptAsync.mock.calls[0]
+    expect(promptCall).toBeDefined()
+    const promptBody = promptCall![0].body
+    expect(promptBody.agent).toBe('plan')
+    const assistant = assistantMessage({
+      id: 'msg_assistant',
+      parentID: promptBody.messageID,
+      mode: 'plan',
       time: { created: 1 },
     })
     events.push({ type: 'message.updated', properties: { info: assistant } })
@@ -563,6 +634,158 @@ describe('OpencodeProvider streamTurn', () => {
       path: { id: 'ses_1' },
       query: { directory: '/tmp/workspace', limit: 50 },
     }))
+  })
+
+  it('recovers terminal async prompts from history when OpenCode reports the session idle', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    const provider = new OpencodeProvider({ readSecret: () => 'secret' })
+    const stream = provider.streamTurn({
+      runId: 'run-idle-recovery',
+      runtimeSession: createRuntimeSession(fake.resource),
+      profile: null,
+      message: {
+        id: 'user-1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Implement this' }],
+      },
+      workspacePath: '/tmp/workspace',
+    })
+
+    const firstChunk = stream.next()
+    await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(1))
+    const promptBody = fake.promptAsync.mock.calls[0]![0].body
+    fake.state.sessionMessagesData.push({
+      info: assistantMessage({
+        id: 'msg_assistant',
+        parentID: promptBody.messageID,
+        time: { created: 1, completed: 2 },
+      }),
+      parts: [textPart()],
+    })
+    events.push({
+      type: 'session.status',
+      properties: { sessionID: 'ses_1', status: { type: 'busy' } },
+    })
+    events.push({
+      type: 'session.idle',
+      properties: { sessionID: 'ses_1' },
+    })
+
+    await expect(firstChunk).resolves.toMatchObject({
+      done: false,
+      value: { type: 'data-runtime-event', data: { kind: 'opencode.session.status' } },
+    })
+    await expect(stream.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: 'data-runtime-event', data: { kind: 'opencode.session.idle' } },
+    })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-start' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-delta', delta: 'Done.' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-end' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'finish' } })
+    await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+    expect(fake.session.messages).toHaveBeenCalledWith(expect.objectContaining({
+      path: { id: 'ses_1' },
+      query: { directory: '/tmp/workspace', limit: 50 },
+    }))
+  })
+
+  it('retries async prompts in a fresh native session when OpenCode goes idle without a terminal assistant', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    const provider = new OpencodeProvider({ readSecret: () => 'secret' })
+    const runtimeSession = createRuntimeSession(fake.resource)
+    const stream = provider.streamTurn({
+      runId: 'run-idle-empty',
+      runtimeSession,
+      profile: null,
+      message: {
+        id: 'user-1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Say hi' }],
+      },
+      workspacePath: '/tmp/workspace',
+    })
+
+    const firstChunk = stream.next()
+    await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(1))
+    events.push({
+      type: 'session.status',
+      properties: { sessionID: 'ses_1', status: { type: 'busy' } },
+    })
+    events.push({
+      type: 'session.status',
+      properties: { sessionID: 'ses_1', status: { type: 'idle' } },
+    })
+
+    await expect(firstChunk).resolves.toMatchObject({
+      done: false,
+      value: { type: 'data-runtime-event', data: { kind: 'opencode.session.status' } },
+    })
+    await expect(stream.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: 'data-runtime-event', data: { kind: 'opencode.session.status' } },
+    })
+    await vi.waitFor(() => expect(fake.session.create).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(2))
+    expect(runtimeSession.providerSessionId).toBe('ses_recovered')
+    expect(fake.promptAsync.mock.calls[1]![0]).toMatchObject({
+      path: { id: 'ses_recovered' },
+      body: {
+        messageID: 'msg_cradle_run_idle_empty_retry',
+        agent: 'build',
+      },
+    })
+    const recoveredAssistant = assistantMessage({
+      id: 'msg_assistant_recovered',
+      sessionID: 'ses_recovered',
+      parentID: fake.promptAsync.mock.calls[1]![0].body.messageID,
+      time: { created: 3 },
+    })
+    fake.state.sessionMessagesData.push({
+      info: {
+        ...recoveredAssistant,
+        time: { created: 3, completed: 4 },
+        finish: 'stop',
+      },
+      parts: [textPart({
+        id: 'part_text_recovered',
+        sessionID: 'ses_recovered',
+        messageID: 'msg_assistant_recovered',
+      })],
+    })
+    events.push({ type: 'message.updated', properties: { info: recoveredAssistant } })
+    events.push({
+      type: 'message.part.updated',
+      properties: {
+        part: textPart({
+          id: 'part_text_recovered',
+          sessionID: 'ses_recovered',
+          messageID: 'msg_assistant_recovered',
+        }),
+      },
+    })
+    events.push({
+      type: 'message.updated',
+      properties: {
+        info: {
+          ...recoveredAssistant,
+          time: { created: 3, completed: 4 },
+          finish: 'stop',
+        },
+      },
+    })
+
+    await expect(stream.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: 'data-runtime-event', data: { kind: 'opencode.session.recovered' } },
+    })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-start' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-delta', delta: 'Done.' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-end' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'finish' } })
+    await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
   })
 
   it('bridges OpenCode permission events through runtime tool approvals', async () => {

@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { ModelDescriptor } from '~/features/agent-runtime/types'
@@ -80,36 +79,6 @@ export function ProviderModelSelector({
   const selectThinkingForModel = (model: ModelDescriptor | null): ThinkingEffort =>
       selectSupportedThinkingValue(model, thinkingOptions, thinkingEffort, 'high')
 
-  // Track pending provider selection to auto-select first model after load
-  const pendingProviderSelectionRef = useRef<string | null>(null)
-
-  // Auto-select first model when a new provider's models finish loading
-  useEffect(() => {
-    const pendingProfileId = pendingProviderSelectionRef.current
-    if (!pendingProfileId) {
-      return
-    }
-
-    // Check if this provider's models have finished loading
-    const isLoading = loadingProfileIds.has(pendingProfileId)
-    if (isLoading) {
-      return
-    }
-
-    // Clear the pending selection
-    pendingProviderSelectionRef.current = null
-
-    // Auto-select the first model if available
-    const loadedModels = modelsByProfileId[pendingProfileId] ?? []
-    if (loadedModels.length > 0) {
-      const firstModel = loadedModels[0]
-      onSelectModel(firstModel.id, pendingProfileId)
-      if (showThinkingInModelMenu) {
-        onSelectThinkingEffort(selectThinkingForModel(firstModel))
-      }
-    }
-  }, [loadingProfileIds, modelsByProfileId, onSelectModel, onSelectThinkingEffort, selectThinkingForModel, showThinkingInModelMenu])
-
   return (
     <ProviderModelPicker
       providerTargets={profiles}
@@ -145,8 +114,6 @@ export function ProviderModelSelector({
       onSelectProviderTarget={(id) => {
         requestProfileModels(id)
         onSelectProfile(id)
-        // Mark this provider as pending - will auto-select first model after load
-        pendingProviderSelectionRef.current = id
       }}
       onSelectModel={(id, profileId) => {
         if (id) {

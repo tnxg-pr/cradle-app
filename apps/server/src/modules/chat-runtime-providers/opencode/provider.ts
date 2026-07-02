@@ -721,9 +721,9 @@ export class OpencodeProvider implements ChatRuntime {
   }
 
   async* streamTurn(input: StreamTurnInput): AsyncGenerator<UIMessageChunk, void, void> {
-    const opencodeSessionId = input.runtimeSession.providerSessionId
+    const initialOpencodeSessionId = input.runtimeSession.providerSessionId
     const lease = input.runtimeSession.providerRuntimeLease
-    if (!opencodeSessionId || !lease) {
+    if (!initialOpencodeSessionId || !lease) {
       throw new ProviderRuntimeError(ProviderErrors.sessionNotFound(this.runtimeKind, input.runtimeSession.chatSessionId))
     }
 
@@ -735,93 +735,21 @@ export class OpencodeProvider implements ChatRuntime {
     this._lastModelId = resolved.modelId
 
     const resource = lease.resource as OpencodeRuntimeResource
-    const projector = new OpencodeEventStreamProjector(opencodeSessionId)
+    let opencodeSessionId = initialOpencodeSessionId
+    let projector = new OpencodeEventStreamProjector(opencodeSessionId)
     const chunks = new AsyncChunkQueue()
     const eventAbortController = new AbortController()
     let asyncPromptMessageId: string | null = null
+    let asyncPromptDispatchStarted = false
     let asyncPromptSubmitted = false
     let eventStreamEnded = false
+    let asyncPromptSessionBecameBusy = false
+    let asyncPromptSessionBecameIdle = false
     let eventStreamRecoveryStarted = false
+    let retriedWithFreshSession = false
 
-    const recoverAfterEndedEventStream = async (): Promise<void> => {
-      if (
-        !asyncPromptMessageId
-        || !asyncPromptSubmitted
-        || !eventStreamEnded
-        || eventStreamRecoveryStarted
-        || chunks.done
-      ) {
-        return
-      }
-      eventStreamRecoveryStarted = true
-      await this.closeAsyncPromptTurnFromHistory({
-        resource,
-        projector,
-        chunks,
-        sessionId: opencodeSessionId,
-        workspacePath: input.workspacePath,
-        userMessageId: asyncPromptMessageId,
-      })
-    }
-
-    try {
-      const subscription = await resource.client.event.subscribe({
-        ...(input.workspacePath ? { query: { directory: input.workspacePath } } : {}),
-        signal: eventAbortController.signal,
-        sseMaxRetryAttempts: 0,
-      })
-      asyncPromptMessageId = createOpencodePromptMessageId(input.runId)
-      void (async () => {
-        try {
-          for await (const event of subscription.stream) {
-            if (event.type === 'permission.updated') {
-              await this.handleOpencodePermissionEvent({
-                input,
-                resource,
-                chunks,
-                permission: event.properties,
-              })
-            }
-            for (const chunk of projector.projectEvent(event)) {
-              chunks.push(chunk)
-            }
-            const terminalAssistant = readOpencodeTerminalAssistantForTurn(event, {
-              sessionId: opencodeSessionId,
-              userMessageId: asyncPromptMessageId!,
-            })
-            if (terminalAssistant) {
-              await this.closeAsyncPromptTurn({
-                resource,
-                projector,
-                chunks,
-                sessionId: opencodeSessionId,
-                workspacePath: input.workspacePath,
-                assistant: terminalAssistant,
-              })
-              return
-            }
-          }
-          eventStreamEnded = true
-          await recoverAfterEndedEventStream()
-        }
-        catch (error) {
-          if (!eventAbortController.signal.aborted) {
-            chunks.push({
-              type: 'data-runtime-event',
-              data: {
-                kind: 'opencode.event-stream-error',
-                message: formatOpencodeError(error),
-              },
-            })
-          }
-        }
-      })()
-    }
-    catch {
-      // The final prompt response remains a complete recovery path when SSE is unavailable.
-    }
-
-    void (async () => {
+    const submitAsyncPromptTurn = async (): Promise<void> => {
+      asyncPromptDispatchStarted = true
       const submission = await submitOpencodeTurn(resource, {
         sessionId: opencodeSessionId,
         workspacePath: input.workspacePath,
@@ -833,6 +761,9 @@ export class OpencodeProvider implements ChatRuntime {
       })
       const { operation, result } = submission
 
+      if (chunks.done) {
+        return
+      }
       if (result.error) {
         chunks.fail(new ProviderRuntimeError(
           ProviderErrors.requestFailed(this.runtimeKind, operation, formatOpencodeError(result.error)),
@@ -841,7 +772,7 @@ export class OpencodeProvider implements ChatRuntime {
       }
       if (operation === 'session.promptAsync') {
         asyncPromptSubmitted = true
-        await recoverAfterEndedEventStream()
+        await recoverAsyncPromptIfTerminalSignalObserved()
         return
       }
       const data = result.data
@@ -868,7 +799,144 @@ export class OpencodeProvider implements ChatRuntime {
       this._lastUsage = projector.usage
       chunks.push(projector.finish(data.info))
       chunks.close()
-    })().catch(error => chunks.fail(error))
+    }
+
+    const retryAsyncPromptWithFreshSession = async (): Promise<void> => {
+      if (retriedWithFreshSession || chunks.done) {
+        return
+      }
+      retriedWithFreshSession = true
+      const previousSessionId = opencodeSessionId
+      const session = await this.createNativeSession(resource, input.workspacePath, input.runtimeSession.chatSessionId)
+      opencodeSessionId = session.id
+      input.runtimeSession.providerSessionId = session.id
+      projector = new OpencodeEventStreamProjector(opencodeSessionId)
+      asyncPromptMessageId = createOpencodePromptMessageId(`${input.runId}_retry`)
+      asyncPromptDispatchStarted = false
+      asyncPromptSubmitted = false
+      asyncPromptSessionBecameBusy = false
+      asyncPromptSessionBecameIdle = false
+      eventStreamRecoveryStarted = false
+      chunks.push({
+        type: 'data-runtime-event',
+        data: {
+          kind: 'opencode.session.recovered',
+          previousSessionId,
+          sessionId: opencodeSessionId,
+        },
+      })
+      await submitAsyncPromptTurn()
+    }
+
+    const recoverAsyncPromptIfTerminalSignalObserved = async (): Promise<void> => {
+      if (
+        !asyncPromptMessageId
+        || eventStreamRecoveryStarted
+        || chunks.done
+      ) {
+        return
+      }
+      const shouldRecoverFromEndedStream = eventStreamEnded && asyncPromptSubmitted
+      const shouldRecoverFromIdleSession =
+        asyncPromptDispatchStarted && asyncPromptSessionBecameBusy && asyncPromptSessionBecameIdle
+      if (!shouldRecoverFromEndedStream && !shouldRecoverFromIdleSession) {
+        return
+      }
+      eventStreamRecoveryStarted = true
+      const recovered = await this.closeAsyncPromptTurnFromHistory({
+        resource,
+        projector,
+        chunks,
+        sessionId: opencodeSessionId,
+        workspacePath: input.workspacePath,
+        userMessageId: asyncPromptMessageId,
+      })
+      if (recovered) {
+        return
+      }
+      if (shouldRecoverFromIdleSession && !retriedWithFreshSession) {
+        await retryAsyncPromptWithFreshSession()
+        return
+      }
+      chunks.fail(new ProviderRuntimeError(
+        ProviderErrors.requestFailed(
+          this.runtimeKind,
+          'session.promptAsync',
+          shouldRecoverFromIdleSession
+            ? 'opencode session became idle before the async prompt produced a terminal assistant message'
+            : 'opencode event stream ended before the async prompt produced a terminal assistant message',
+        ),
+      ))
+    }
+
+    try {
+      const subscription = await resource.client.event.subscribe({
+        ...(input.workspacePath ? { query: { directory: input.workspacePath } } : {}),
+        signal: eventAbortController.signal,
+        sseMaxRetryAttempts: 0,
+      })
+      asyncPromptMessageId = createOpencodePromptMessageId(input.runId)
+      void (async () => {
+        try {
+          for await (const event of subscription.stream) {
+            if (isOpencodeSessionStatusEvent(event, opencodeSessionId, 'busy')) {
+              asyncPromptSessionBecameBusy = true
+            }
+            if (
+              isOpencodeSessionStatusEvent(event, opencodeSessionId, 'idle')
+              || isOpencodeSessionIdleEvent(event, opencodeSessionId)
+            ) {
+              asyncPromptSessionBecameIdle = true
+            }
+            if (event.type === 'permission.updated') {
+              await this.handleOpencodePermissionEvent({
+                input,
+                resource,
+                chunks,
+                permission: event.properties,
+              })
+            }
+            for (const chunk of projector.projectEvent(event)) {
+              chunks.push(chunk)
+            }
+            const terminalAssistant = readOpencodeTerminalAssistantForTurn(event, {
+              sessionId: opencodeSessionId,
+              userMessageId: asyncPromptMessageId!,
+            })
+            if (terminalAssistant) {
+              await this.closeAsyncPromptTurn({
+                resource,
+                projector,
+                chunks,
+                sessionId: opencodeSessionId,
+                workspacePath: input.workspacePath,
+                assistant: terminalAssistant,
+              })
+              return
+            }
+            await recoverAsyncPromptIfTerminalSignalObserved()
+          }
+          eventStreamEnded = true
+          await recoverAsyncPromptIfTerminalSignalObserved()
+        }
+        catch (error) {
+          if (!eventAbortController.signal.aborted) {
+            chunks.push({
+              type: 'data-runtime-event',
+              data: {
+                kind: 'opencode.event-stream-error',
+                message: formatOpencodeError(error),
+              },
+            })
+          }
+        }
+      })()
+    }
+    catch {
+      // The final prompt response remains a complete recovery path when SSE is unavailable.
+    }
+
+    void submitAsyncPromptTurn().catch(error => chunks.fail(error))
 
     try {
       for await (const chunk of chunks) {
@@ -1066,9 +1134,9 @@ export class OpencodeProvider implements ChatRuntime {
     sessionId: string
     workspacePath?: string
     userMessageId: string
-  }): Promise<void> {
+  }): Promise<boolean> {
     if (input.chunks.done) {
-      return
+      return true
     }
 
     const messages = await input.resource.client.session.messages({
@@ -1083,19 +1151,12 @@ export class OpencodeProvider implements ChatRuntime {
           `opencode event stream ended before completion and history recovery failed: ${formatOpencodeError(messages.error)}`,
         ),
       ))
-      return
+      return true
     }
 
     const terminalAssistant = readTerminalAssistantForUserMessage(messages.data ?? [], input.userMessageId)
     if (!terminalAssistant) {
-      input.chunks.fail(new ProviderRuntimeError(
-        ProviderErrors.requestFailed(
-          this.runtimeKind,
-          'session.promptAsync',
-          'opencode event stream ended before the async prompt produced a terminal assistant message',
-        ),
-      ))
-      return
+      return false
     }
 
     await this.closeAsyncPromptTurn({
@@ -1106,6 +1167,7 @@ export class OpencodeProvider implements ChatRuntime {
       workspacePath: input.workspacePath,
       assistant: terminalAssistant,
     })
+    return true
   }
 
   private recordPermissionApproval(input: {
@@ -1133,9 +1195,9 @@ export class OpencodeProvider implements ChatRuntime {
 
   private async createNativeSession(
     resource: OpencodeRuntimeResource,
-    workspacePath: string,
+    workspacePath: string | undefined,
     chatSessionId: string,
-  ) {
+  ): Promise<OpencodeSession & { id: string }> {
     const result = await resource.client.session.create({
       query: { directory: workspacePath },
       body: { title: `Cradle ${chatSessionId}` },
@@ -1145,7 +1207,12 @@ export class OpencodeProvider implements ChatRuntime {
         ProviderErrors.requestFailed(this.runtimeKind, 'session.create', formatOpencodeError(result.error)),
       )
     }
-    return result.data
+    if (!result.data?.id) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'session.create', 'opencode returned no created session'),
+      )
+    }
+    return result.data as OpencodeSession & { id: string }
   }
 
   private async resolveRuntimeConfig(input: {
@@ -1306,14 +1373,14 @@ async function submitOpencodeTurn(
       return {
         operation: 'session.prompt',
         result: normalizeOpencodeTurnResult(await resource.client.session.prompt({
-            path: { id: input.sessionId },
-            query: { directory: input.workspacePath },
-            body: {
-              ...(input.model ? { model: input.model } : {}),
-              agent: input.agent,
-              ...(input.systemPrompt ? { system: input.systemPrompt } : {}),
-              parts: projectOpencodePromptParts(input.message),
-            },
+          path: { id: input.sessionId },
+          query: { directory: input.workspacePath },
+          body: {
+            ...(input.model ? { model: input.model } : {}),
+            agent: input.agent,
+            ...(input.systemPrompt ? { system: input.systemPrompt } : {}),
+            parts: projectOpencodePromptParts(input.message),
+          },
         })),
       }
     }
@@ -1392,6 +1459,20 @@ function readOpencodeTurnAgent(input: StreamTurnInput): string {
 function createOpencodePromptMessageId(runId: string): string {
   const suffix = (runId || randomUUID()).replace(/[^a-zA-Z0-9]/g, '_')
   return `msg_cradle_${suffix}`
+}
+
+function isOpencodeSessionStatusEvent(
+  event: OpencodeEvent,
+  sessionId: string,
+  status: 'busy' | 'idle',
+): boolean {
+  return event.type === 'session.status'
+    && event.properties.sessionID === sessionId
+    && event.properties.status.type === status
+}
+
+function isOpencodeSessionIdleEvent(event: OpencodeEvent, sessionId: string): boolean {
+  return event.type === 'session.idle' && event.properties.sessionID === sessionId
 }
 
 function toOpencodePermissionToolCallId(permissionId: string): string {

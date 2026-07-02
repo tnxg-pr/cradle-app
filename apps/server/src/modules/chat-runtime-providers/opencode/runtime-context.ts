@@ -5,11 +5,13 @@
  *
  * opencode `serve` is a stateless multiplexer: `directory` and `model` are
  * carried per request, while Cradle-owned provider/MCP config is injected at
- * process startup through `OPENCODE_CONFIG_CONTENT`. One long-lived server
- * therefore serves every Cradle chat session and workspace until the injected
- * config changes, at which point Cradle restarts the shared server with the new
- * cumulative config. Per-session process spawning and the host-manager
- * lease/reaper machinery do not apply here.
+ * process startup through `OPENCODE_CONFIG_CONTENT`. opencode cwd, config
+ * directory, and database path are isolated under Cradle's runtime data
+ * directory. One long-lived server therefore serves every Cradle chat session
+ * and workspace until the injected config changes, at which point Cradle
+ * restarts the shared server with the new cumulative config. Per-session
+ * process spawning and the host-manager lease/reaper machinery do not apply
+ * here.
  *
  * The server is spawned directly (rather than via the SDK's `createOpencode`)
  * so Cradle retains the `ChildProcess` and can report its pid/RSS/CPU to the
@@ -37,6 +39,8 @@ const SERVER_STARTUP_TIMEOUT_MS = 5000
 const SERVER_LISTENING_PATTERN = /on\s+(https?:\/\/\S+)/
 const PROCESS_RESOURCE_FIELD_SEPARATOR_PATTERN = /\s+/
 const OPENCODE_RUNTIME_DIR_NAME = 'opencode'
+const OPENCODE_DB_FILE_NAME = 'opencode.db'
+const OPENCODE_CONFIG_DIR_NAME = 'config'
 
 export interface OpencodeRuntimeResource {
   client: OpencodeClient
@@ -183,12 +187,18 @@ function launchOpencodeServer(port: number): Promise<{ process: ChildProcess, ur
   return new Promise((resolve, reject) => {
     const args = ['serve', `--hostname=127.0.0.1`, `--port=${port}`]
     const cwd = resolveOpencodeRuntimeDirectory()
+    const configDir = resolveOpencodeConfigDirectory()
+    const dbPath = resolveOpencodeDatabasePath()
     mkdirSync(cwd, { recursive: true })
+    mkdirSync(configDir, { recursive: true })
     const proc = spawn('opencode', args, {
       cwd,
       env: {
         ...process.env,
+        OPENCODE_CONFIG_DIR: configDir,
         OPENCODE_CONFIG_CONTENT: JSON.stringify(serverConfig),
+        OPENCODE_DB: dbPath,
+        OPENCODE_DISABLE_PROJECT_CONFIG: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -289,8 +299,9 @@ function readProcessResourceUsage(pid: number): { rssMB: number, cpuPercent: num
  * source tree.
  *
  * If the cumulative startup config changes while the shared server is running,
- * restart it. opencode sessions are stored outside the server process, and the
- * server is otherwise a stateless HTTP multiplexer.
+ * restart it. opencode sessions are stored in Cradle's opencode runtime
+ * database outside the server process, and the server is otherwise a stateless
+ * HTTP multiplexer.
  */
 export async function ensureOpencodeServerConfig(input: {
   config: Config
@@ -350,7 +361,8 @@ function readOpencodeRuntimeConfigPayload(config: Config): Pick<Config, 'provide
  * When the caller passes a config that projects `provider` or `mcp` entries,
  * the shared server is started or restarted with that config in
  * `OPENCODE_CONFIG_CONTENT`. The workspace directory remains only the request
- * execution directory; Cradle never writes opencode config into it.
+ * execution directory; Cradle disables opencode project config and never writes
+ * runtime-owned opencode config into it.
  */
 export async function acquireOpencodeRuntimeResource(input: {
   runtimeKind: RuntimeKind
@@ -408,6 +420,14 @@ export function resolveOpencodeRuntimeDirectory(): string {
     return join(dataDir, 'runtime', OPENCODE_RUNTIME_DIR_NAME)
   }
   return join(tmpdir(), 'cradle-runtime', OPENCODE_RUNTIME_DIR_NAME)
+}
+
+export function resolveOpencodeConfigDirectory(): string {
+  return join(resolveOpencodeRuntimeDirectory(), OPENCODE_CONFIG_DIR_NAME)
+}
+
+export function resolveOpencodeDatabasePath(): string {
+  return join(resolveOpencodeRuntimeDirectory(), OPENCODE_DB_FILE_NAME)
 }
 
 function formatError(error: unknown): string {
