@@ -4,6 +4,6 @@
 
 ## 文件清单
 
-- `index.ts`: exposes `/desktop/summary`, `/desktop/recent-sessions`, `/desktop/health`, and `/desktop/awaits` as read-only facts for Electron Desktop entry surfaces. These routes are intentionally not CLI-exposed.
+- `index.ts`: exposes `/desktop/summary`, `/desktop/recent-sessions`, `/desktop/health`, `/desktop/awaits`, and `/desktop/user-input-requests` as read-only facts for Electron Desktop entry surfaces. These routes are intentionally not CLI-exposed.
 - `model.ts`: Elysia response schemas for the Desktop projection contract.
-- `service.ts`: read-only Desktop fact aggregation for running sessions, recent sessions, pending awaits, health, automation counts, provider counts, and workspace counts. Electron Desktop owns tray layout, ordering, labels, and action semantics.
+- `service.ts`: read-only Desktop fact aggregation for running sessions, recent sessions, pending awaits, runtime user-input requests, health, automation counts, provider counts, and workspace counts. Electron Desktop owns tray/notification layout, ordering, labels, and action semantics.

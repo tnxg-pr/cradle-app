@@ -1,38 +1,195 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Cradle Design System · Token Contract
+   ─────────────────────────────────────────────────────────────────────────
+   Nine token families. Each has a semantic reason to exist:
+
+     1. Neutral scale (1..10)      — surface / chrome / fill / border / text
+     2. Accent (semantic)          — content-category colors, not decoration
+     3. Semantic status            — success / warning / error / info
+     4. Text tiers (pre-resolved)  — 4 contrast tiers, never stack opacity
+     5. Chrome / sidebar family    — the two-tone architecture
+     6. Shadow stack               — surface texture, not elevation
+     7. Radius scale multiplier    — one root radius, derived steps
+     8. Motion / spring            — physics-native, no ease-in-out
+     9. Layout constants           — fixed rails (sidebar width, header, etc.)
+
+   The @theme block at the bottom declares the canonical light-mode values.
+   Dark overrides live above; the @theme block wins because CSS custom
+   property redeclaration follows source order, and consumers of Tailwind v4
+   pick up the values from @theme regardless.
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Dark-mode override — activated by [data-theme='dark'] or .dark on <html>. */
+[data-theme='dark'],
+.dark {
+  --color-neutral-1: #141414;
+  --color-neutral-2: #111111;
+  --color-neutral-3: #1a1a1a;
+  --color-neutral-4: #2a2a2a;
+  --color-neutral-5: #404040;
+  --color-neutral-6: #8a8a8a;
+  --color-neutral-7: #a3a3a3;
+  --color-neutral-8: #d4d4d4;
+  --color-neutral-9: #f5f5f5;
+  --color-neutral-10: #ffffff;
+
+  /* Text tiers invert with the scale */
+  --text-primary: var(--color-neutral-9);
+  --text-secondary: var(--color-neutral-6);
+  --text-tertiary: var(--color-neutral-7);
+  --text-dim: var(--color-neutral-5);
+
+  /* Chrome / sidebar family */
+  --color-sidebar: var(--color-neutral-2);
+  --color-sidebar-foreground: var(--color-neutral-7);
+  --color-sidebar-fill: rgba(255, 255, 255, 0.04);
+  --color-sidebar-border: rgba(255, 255, 255, 0.05);
+  --color-sidebar-ring: var(--color-neutral-5);
+
+  /* Content surface + border tokens */
+  --color-surface: var(--color-neutral-1);
+  --color-surface-inset: var(--color-neutral-2);
+  --color-fill: rgba(255, 255, 255, 0.04);
+  --color-border-content: rgba(255, 255, 255, 0.06);
+  --color-border-chrome: rgba(255, 255, 255, 0.05);
+
+  /* Shadow stack — heavier opacity to compensate for dark surfaces */
+  --shadow-xs: 0 1px 2px oklch(0 0 0 / 0.20), 0 0 0 1px oklch(0 0 0 / 0.18);
+  --shadow-sm: 0 1px 3px oklch(0 0 0 / 0.30), 0 0 0 1px oklch(0 0 0 / 0.22);
+  --shadow-md: 0 4px 16px -2px oklch(0 0 0 / 0.35), 0 2px 4px -1px oklch(0 0 0 / 0.20);
+  --shadow-lg: 0 8px 40px -8px oklch(0 0 0 / 0.40), 0 2px 8px -2px oklch(0 0 0 / 0.25);
+}
+
+/* ─── Canonical light-mode declarations ──────────────────────────────── */
+
 @theme {
-  /* Neutral scale — 1 (lightest) to 10 (darkest) */
-  --color-neutral-1: #ffffff;
-  --color-neutral-2: #f5f5f5;
-  --color-neutral-3: #ebebeb;
-  --color-neutral-4: #d4d4d4;
-  --color-neutral-5: #a3a3a3;
-  --color-neutral-6: #737373;
-  --color-neutral-7: #595959;
-  --color-neutral-8: #404040;
-  --color-neutral-9: #262626;
-  --color-neutral-10: #141414;
+  /* 1 · Neutral scale — 1 (surface) to 10 (max emphasis) */
+  --color-neutral-1: #ffffff;   /* content surface, page background */
+  --color-neutral-2: #f5f5f5;   /* chrome (sidebar / header / footer) */
+  --color-neutral-3: #ebebeb;   /* hover fill, subtle surface */
+  --color-neutral-4: #d4d4d4;   /* strong fill, dividers */
+  --color-neutral-5: #a3a3a3;   /* ring / border — NEVER as text */
+  --color-neutral-6: #737373;   /* secondary text, muted foreground */
+  --color-neutral-7: #595959;   /* chrome foreground, tertiary text */
+  --color-neutral-8: #404040;   /* strong secondary text */
+  --color-neutral-9: #262626;   /* primary body text, CTA background */
+  --color-neutral-10: #141414;  /* dark mode surface, max emphasis */
 
-  /* Accent colors — semantic, paired as bg/10 + text/60~70 */
-  --color-accent: #3b82f6;
-  --color-accent-session: #8b5cf6;
-  --color-accent-global: #0ea5e9;
-  --color-accent-scope: #10b981;
-  --color-accent-agent: #f43f5e;
-  --color-accent-legacy: #f59e0b;
-  --color-accent-diff: #f97316;
-  --color-accent-summary: #ec4899;
+  /* 2 · Accent — each color maps to a content category */
+  --color-accent: #3b82f6;           /* Workspace (default) */
+  --color-accent-session: #8b5cf6;   /* Session / Builtin */
+  --color-accent-global: #0ea5e9;    /* Global */
+  --color-accent-scope: #10b981;     /* Workspace scope / Doc */
+  --color-accent-agent: #f43f5e;     /* Agent */
+  --color-accent-legacy: #f59e0b;    /* Legacy */
+  --color-accent-diff: #f97316;      /* Diff */
+  --color-accent-summary: #ec4899;   /* Summary */
 
-  /* Semantic status */
+  /* 3 · Semantic status */
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
   --color-info: #3b82f6;
 
-  /* Font stacks */
+  /* 4 · Font stacks */
   --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'Geist Mono', 'JetBrains Mono', 'SF Mono', Consolas, monospace;
 
-  /* Code syntax highlighting (for dark code blocks) */
+  /* 5 · Code syntax highlighting (for dark code blocks) */
   --color-code-keyword: #93c5fd;
   --color-code-value: #86efac;
   --color-code-string: #fde68a;
+}
+
+/* 6 · Pre-resolved text tiers — never stack opacity on top of these.
+   Four tiers, each with a locked WCAG contrast ratio on --color-neutral-1. */
+:root {
+  --text-primary: var(--color-neutral-9);   /* ~14 : 1 body, headings */
+  --text-secondary: var(--color-neutral-6); /* ~4.5 : 1 (AA) meta, timestamps */
+  --text-tertiary: var(--color-neutral-7);  /* ~6.2 : 1 (AA) chrome labels */
+  --text-dim: var(--color-neutral-5);       /* ~2.7 : 1 decorative / disabled */
+}
+
+/* 7 · Chrome / sidebar family — the two-tone architecture.
+   Chrome is always dimmer than content. Every chrome region shares this bg. */
+:root {
+  --color-surface: var(--color-neutral-1);        /* content surface */
+  --color-surface-inset: var(--color-neutral-2);  /* recessed content (chat well) */
+  --color-fill: var(--color-neutral-3);           /* hover fill, muted */
+  --color-sidebar: var(--color-neutral-2);        /* sidebar / header / footer bg */
+  --color-sidebar-foreground: var(--color-neutral-7);
+  --color-sidebar-fill: rgba(0, 0, 0, 0.04);      /* sidebar row hover */
+  --color-sidebar-border: rgba(0, 0, 0, 0.06);    /* chrome-region borders */
+  --color-sidebar-ring: var(--color-neutral-4);
+  --color-border-content: rgba(0, 0, 0, 0.08);    /* content-region borders */
+  --color-border-chrome: rgba(0, 0, 0, 0.06);     /* chrome-region borders */
+}
+
+/* 8 · Shadow stack — surface texture, not elevation.
+   Every layer is a 1px oklch ring plus a low-opacity soft cast. No `md`
+   floating cards. Use inset-shadow for pressed / focused states. */
+:root {
+  --shadow-xs: 0 1px 2px oklch(0 0 0 / 0.04), 0 0 0 1px oklch(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px oklch(0 0 0 / 0.08), 0 0 0 1px oklch(0 0 0 / 0.06);
+  --shadow-md: 0 4px 16px -2px oklch(0 0 0 / 0.10), 0 2px 4px -1px oklch(0 0 0 / 0.06);
+  --shadow-lg: 0 8px 40px -8px oklch(0 0 0 / 0.14), 0 2px 8px -2px oklch(0 0 0 / 0.07);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --shadow-inset-ring: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+/* 9 · Radius scale — a single root radius, all steps derived.
+   Radii are ratios, not literals. Change --radius and the entire system
+   scales together. sm 6 · md 8 · base 10 · lg 12 · xl 16 · 2xl 24 · full ∞ */
+:root {
+  --radius: 0.625rem;                    /* 10px — the base unit */
+  --radius-sm: calc(var(--radius) * 0.6);   /* 6px  — chips */
+  --radius-md: calc(var(--radius) * 0.8);   /* 8px  — buttons, inputs */
+  --radius-lg: var(--radius);               /* 10px — cards, panels */
+  --radius-xl: calc(var(--radius) * 1.2);   /* 12px — popovers, modals */
+  --radius-2xl: calc(var(--radius) * 1.6);  /* 16px — content cards */
+  --radius-3xl: calc(var(--radius) * 2.4);  /* 24px — floating panels */
+  --radius-full: 9999px;
+}
+
+/* 10 · Motion / spring physics — physics-native, no linear transitions.
+   Framer Motion values. Duration is emergent from stiffness/damping. */
+:root {
+  --spring-default-stiffness: 600;
+  --spring-default-damping: 40;
+  --spring-message-stiffness: 500;
+  --spring-message-damping: 35;
+  --spring-drill-stiffness: 600;
+  --spring-drill-damping: 40;
+  --spring-drill-mass: 0.8;
+  /* Non-interactive CSS fallbacks (icon swaps, non-motion transitions) */
+  --duration-quick: 120ms;
+  --duration-standard: 200ms;
+  --duration-slow: 300ms;
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 11 · Layout constants — fixed rails, not tokens that shift with theme. */
+:root {
+  --layout-sidebar-width: 260px;
+  --layout-sidebar-collapsed: 48px;
+  --layout-header-height: 44px;    /* 40px classic + 4px drag region */
+  --layout-footer-height: 36px;
+  --layout-content-max-chat: 672px;
+  --layout-content-max-wide: 896px;
+  --layout-gutter: 4px;              /* inset floating-card gutter */
+}
+
+/* 12 · Global scrollbar suppression — a first-class philosophy.
+   Content scrolls without visible tracks. Use ScrollArea if you need one. */
+:root {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
+/* 13 · Text-wrap defaults — headings balance, body pretties.
+   Set on :root so consumers get the baseline; overridable per-element. */
+:root {
+  text-wrap: pretty;
 }

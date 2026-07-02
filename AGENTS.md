@@ -27,7 +27,6 @@ Every feature must have a clear owner responsible for its semantics, configurati
 
 Don't write component tests for the sake of coverage. Only test when explicitly requested or when the test exercises a critical path that can't be verified otherwise. Avoid browser-based testing unless specifically asked.
 
-
 ## Stacks
 
 - **Frontend**: React, TypeScript, Tailwind CSS
