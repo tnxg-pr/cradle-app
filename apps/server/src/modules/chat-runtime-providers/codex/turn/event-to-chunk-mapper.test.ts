@@ -227,7 +227,35 @@ describe('mapCodexAppServerNotificationToChunks', () => {
         itemId: 'cmd-1',
         delta: '{ "name": "cradle" }\n',
       },
-    }, state)).toEqual([])
+    }, state)).toEqual([{
+      type: 'tool-output-available',
+      toolCallId: 'cmd-1',
+      preliminary: true,
+      output: {
+        type: 'cradle.builtin-tool-call.result.v1',
+        identifier: 'codex',
+        apiName: 'command_execution',
+        args: {
+          command: 'cat package.json',
+          cwd: '/repo',
+          processId: 'pty-1',
+          source: 'agent',
+          status: 'inProgress',
+          commandActions,
+        },
+        result: {
+          command: 'cat package.json',
+          cwd: '/repo',
+          processId: 'pty-1',
+          source: 'agent',
+          status: 'inProgress',
+          commandActions,
+          output: '{ "name": "cradle" }\n',
+          exitCode: null,
+          code: null,
+        },
+      },
+    }])
 
     expect(mapCodexAppServerNotificationToChunks({
       method: 'item/completed',

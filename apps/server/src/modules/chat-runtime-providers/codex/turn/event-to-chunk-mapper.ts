@@ -92,6 +92,11 @@ interface CodexCompletedPlan {
   content: string
 }
 
+type CommandExecutionArgs = Pick<
+  CodexAppServerItem,
+  'command' | 'cwd' | 'processId' | 'source' | 'status' | 'commandActions'
+>
+
 export function createCodexAppServerMapperState(
   textItemId: string,
   options: { synthesizePlanImplementationRequest?: boolean } = {},
@@ -471,7 +476,40 @@ function mapCommandOutputDelta(rawParams: unknown, state: CodexAppServerMapperSt
   const collector = state.commandOutputById.get(params.itemId) ?? createBoundedTextCollector()
   collector.append(params.delta)
   state.commandOutputById.set(params.itemId, collector)
-  return []
+  return [
+    ...startToolItemForOutOfOrderDelta(state, {
+      id: params.itemId,
+      type: 'commandExecution',
+    }),
+    {
+      type: 'tool-output-available',
+      toolCallId: params.itemId,
+      preliminary: true,
+      output: buildCodexToolOutput(
+        readBufferedCommandExecutionItem(params.itemId, state),
+        collector.read(),
+        state.commandById.get(params.itemId),
+        state.toolArgsById.get(params.itemId),
+      ),
+    },
+  ]
+}
+
+function readBufferedCommandExecutionItem(
+  itemId: string,
+  state: CodexAppServerMapperState,
+): CodexAppServerItem {
+  const args = state.toolArgsById.get(itemId) as Partial<CommandExecutionArgs> | undefined
+  return {
+    id: itemId,
+    type: 'commandExecution',
+    command: args?.command ?? state.commandById.get(itemId),
+    cwd: args?.cwd,
+    processId: args?.processId,
+    source: args?.source,
+    status: args?.status ?? 'inProgress',
+    commandActions: args?.commandActions,
+  }
 }
 
 function mapToolProgressDelta(
