@@ -3,12 +3,12 @@
  * Input: opencode native config and Cradle runtime host key.
  * Position: opencode provider package runtime process owner.
  *
- * opencode `serve` is a stateless multiplexer: `directory`, `model` and config
- * are all carried per request, sessions coexist globally, and config can be
- * hot-updated per directory via `POST /config?directory=...`. One long-lived
- * server therefore serves every Cradle chat session, workspace and provider
- * target. Cradle owns that single server's lifecycle (started at app boot,
- * stopped on shutdown); per-session process spawning and the host-manager
+ * opencode `serve` is a stateless multiplexer: `directory` and `model` are
+ * carried per request, while Cradle-owned provider/MCP config is injected at
+ * process startup through `OPENCODE_CONFIG_CONTENT`. One long-lived server
+ * therefore serves every Cradle chat session and workspace until the injected
+ * config changes, at which point Cradle restarts the shared server with the new
+ * cumulative config. Per-session process spawning and the host-manager
  * lease/reaper machinery do not apply here.
  *
  * The server is spawned directly (rather than via the SDK's `createOpencode`)
@@ -19,7 +19,10 @@
 
 import type { ChildProcess } from 'node:child_process'
 import { execSync, spawn } from 'node:child_process'
+import { mkdirSync } from 'node:fs'
 import net from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type { Config, OpencodeClient } from '@opencode-ai/sdk'
 import { createOpencodeClient } from '@opencode-ai/sdk'
@@ -33,6 +36,7 @@ const logger = createChildLogger({ module: 'chat-runtime.opencode-server' })
 const SERVER_STARTUP_TIMEOUT_MS = 5000
 const SERVER_LISTENING_PATTERN = /on\s+(https?:\/\/\S+)/
 const PROCESS_RESOURCE_FIELD_SEPARATOR_PATTERN = /\s+/
+const OPENCODE_RUNTIME_DIR_NAME = 'opencode'
 
 export interface OpencodeRuntimeResource {
   client: OpencodeClient
@@ -61,6 +65,8 @@ interface OpencodeServerResources {
 }
 
 let instancePromise: Promise<OpencodeServerInstance> | null = null
+let serverConfig: Config = {}
+let serverConfigFingerprint = ''
 
 /**
  * Start the shared opencode server (idempotent). Resolves to the same instance
@@ -176,10 +182,13 @@ async function spawnOpencodeServerInstance(): Promise<OpencodeServerInstance> {
 function launchOpencodeServer(port: number): Promise<{ process: ChildProcess, url: string }> {
   return new Promise((resolve, reject) => {
     const args = ['serve', `--hostname=127.0.0.1`, `--port=${port}`]
+    const cwd = resolveOpencodeRuntimeDirectory()
+    mkdirSync(cwd, { recursive: true })
     const proc = spawn('opencode', args, {
+      cwd,
       env: {
         ...process.env,
-        OPENCODE_CONFIG_CONTENT: JSON.stringify({}),
+        OPENCODE_CONFIG_CONTENT: JSON.stringify(serverConfig),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -273,71 +282,64 @@ function readProcessResourceUsage(pid: number): { rssMB: number, cpuPercent: num
 }
 
 /**
- * Install a Cradle provider target's opencode config into the given workspace
- * directory on the shared server. opencode scopes config per directory; we
- * read-modify-write so multiple provider targets (namespaced by `cradle-*`
- * provider IDs) coexist instead of clobbering each other. The native target
- * (no projected `provider` entries) is left to opencode's own user config.
+ * Add a Cradle provider target's opencode config to the shared server startup
+ * config. We intentionally do not call opencode's config update endpoint with
+ * the workspace directory: opencode persists that as a project-level
+ * `config.json`, which would write runtime-owned Cradle config into the user's
+ * source tree.
  *
- * Redundant installs for an unchanged directory+target are skipped via a
- * fingerprint cache, so reconnects/resumes do not replay the round trip.
+ * If the cumulative startup config changes while the shared server is running,
+ * restart it. opencode sessions are stored outside the server process, and the
+ * server is otherwise a stateless HTTP multiplexer.
  */
-export async function ensureOpencodeDirectoryConfig(input: {
-  directory: string
-  providerTargetId: string | null
+export async function ensureOpencodeServerConfig(input: {
   config: Config
 }): Promise<void> {
-  const incomingProvider = input.config.provider
-  if (!incomingProvider) {
+  const incomingConfig = readOpencodeRuntimeConfigPayload(input.config)
+  if (!incomingConfig) {
     return
   }
 
-  const fingerprintKey = `${input.directory}::${input.providerTargetId ?? 'native'}`
-  const incomingJson = JSON.stringify(incomingProvider)
-  if (directoryConfigFingerprints.get(fingerprintKey) === incomingJson) {
+  const nextConfig = mergeOpencodeRuntimeConfig(serverConfig, incomingConfig)
+  const nextFingerprint = JSON.stringify(readOpencodeRuntimeConfigPayload(nextConfig) ?? {})
+  if (serverConfigFingerprint === nextFingerprint) {
     return
   }
 
-  const { client } = await getOpencodeServer()
-  try {
-    const existing = await client.config.get({ query: { directory: input.directory } })
-    if (existing.error) {
-      logger.warn('opencode config.get failed', {
-        directory: input.directory,
-        error: formatError(existing.error),
-      })
-      return
-    }
-    const base = (existing.data ?? {}) as Config
-    const merged: Config = {
-      ...base,
-      provider: {
-        ...(base.provider ?? {}),
-        ...incomingProvider,
-      },
-    }
-    const result = await client.config.update({
-      query: { directory: input.directory },
-      body: merged,
-    })
-    if (result.error) {
-      logger.warn('opencode config.update failed', {
-        directory: input.directory,
-        error: formatError(result.error),
-      })
-      return
-    }
-    directoryConfigFingerprints.set(fingerprintKey, incomingJson)
-  }
-  catch (error) {
-    logger.warn('opencode directory config ensure failed', {
-      directory: input.directory,
-      error: formatError(error),
-    })
+  serverConfig = nextConfig
+  serverConfigFingerprint = nextFingerprint
+  if (instancePromise) {
+    await stopOpencodeServer()
   }
 }
 
-const directoryConfigFingerprints = new Map<string, string>()
+export function mergeOpencodeRuntimeConfig(base: Config, incoming: Config): Config {
+  const merged: Config = { ...base }
+  if (incoming.provider) {
+    merged.provider = {
+      ...(base.provider ?? {}),
+      ...incoming.provider,
+    }
+  }
+  if (incoming.mcp) {
+    merged.mcp = {
+      ...(base.mcp ?? {}),
+      ...incoming.mcp,
+    }
+  }
+  return merged
+}
+
+function readOpencodeRuntimeConfigPayload(config: Config): Pick<Config, 'provider' | 'mcp'> | null {
+  const payload: Pick<Config, 'provider' | 'mcp'> = {}
+  if (config.provider) {
+    payload.provider = config.provider
+  }
+  if (config.mcp) {
+    payload.mcp = config.mcp
+  }
+  return payload.provider || payload.mcp ? payload : null
+}
 
 /**
  * Acquire the shared opencode server resource. The returned lease is a no-op:
@@ -345,8 +347,10 @@ const directoryConfigFingerprints = new Map<string, string>()
  * down. The signature is preserved so callers can keep treating it as a
  * host-managed lease.
  *
- * When `directory` is provided alongside a config that projects `provider`
- * entries, the target's config is installed into that directory first.
+ * When the caller passes a config that projects `provider` or `mcp` entries,
+ * the shared server is started or restarted with that config in
+ * `OPENCODE_CONFIG_CONTENT`. The workspace directory remains only the request
+ * execution directory; Cradle never writes opencode config into it.
  */
 export async function acquireOpencodeRuntimeResource(input: {
   runtimeKind: RuntimeKind
@@ -355,13 +359,7 @@ export async function acquireOpencodeRuntimeResource(input: {
   config: Config
   directory?: string
 }): Promise<RuntimeLiveResourceLease<OpencodeRuntimeResource>> {
-  if (input.directory) {
-    await ensureOpencodeDirectoryConfig({
-      directory: input.directory,
-      providerTargetId: input.providerTargetId,
-      config: input.config,
-    })
-  }
+  await ensureOpencodeServerConfig({ config: input.config })
   const instance = await getOpencodeServer()
   const resource: OpencodeRuntimeResource = {
     client: instance.client,
@@ -402,6 +400,14 @@ async function findAvailablePort(): Promise<number> {
       })
     })
   })
+}
+
+export function resolveOpencodeRuntimeDirectory(): string {
+  const dataDir = process.env.CRADLE_DATA_DIR?.trim()
+  if (dataDir) {
+    return join(dataDir, 'runtime', OPENCODE_RUNTIME_DIR_NAME)
+  }
+  return join(tmpdir(), 'cradle-runtime', OPENCODE_RUNTIME_DIR_NAME)
 }
 
 function formatError(error: unknown): string {

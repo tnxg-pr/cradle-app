@@ -58,6 +58,83 @@ const OPENCODE_TERMINAL_SLOT: RuntimeUiSlot = {
   surfaces: ['runtimePanel'],
 }
 
+const OPENCODE_PROGRESS_SLOT: RuntimeUiSlot = {
+  id: 'opencode:progress',
+  name: 'progress',
+  label: 'Progress',
+  description: 'Show the current opencode todo list.',
+  argumentHint: '',
+  iconKey: 'progress',
+  commandText: '/progress ',
+  surfaces: ['runtimePanel', 'composerState'],
+}
+
+const OPENCODE_DIFF_SLOT: RuntimeUiSlot = {
+  id: 'opencode:diff',
+  name: 'diff',
+  label: 'Diff',
+  description: 'Show the current opencode file diff summary.',
+  argumentHint: '',
+  iconKey: 'diff',
+  commandText: '/diff ',
+  surfaces: ['runtimePanel'],
+}
+
+const OPENCODE_APPROVALS_SLOT: RuntimeUiSlot = {
+  id: 'opencode:approvals',
+  name: 'approvals',
+  label: 'Approvals',
+  description: 'Show pending and recent opencode permission requests.',
+  argumentHint: '',
+  iconKey: 'approvals',
+  commandText: '/approvals ',
+  surfaces: ['runtimePanel'],
+}
+
+const OPENCODE_MCP_SLOT: RuntimeUiSlot = {
+  id: 'opencode:mcp',
+  name: 'mcp',
+  label: 'MCP',
+  description: 'Show opencode MCP server status.',
+  argumentHint: '',
+  iconKey: 'mcp',
+  commandText: '/mcp ',
+  surfaces: ['runtimePanel'],
+}
+
+const OPENCODE_FILESYSTEM_SLOT: RuntimeUiSlot = {
+  id: 'opencode:filesystem',
+  name: 'filesystem',
+  label: 'Files',
+  description: 'Show opencode workspace file changes.',
+  argumentHint: '',
+  iconKey: 'filesystem',
+  commandText: '/files ',
+  surfaces: ['runtimePanel'],
+}
+
+const OPENCODE_CONFIG_SLOT: RuntimeUiSlot = {
+  id: 'opencode:config',
+  name: 'config',
+  label: 'Config',
+  description: 'Show opencode runtime configuration summary.',
+  argumentHint: '',
+  iconKey: 'config',
+  commandText: '/config ',
+  surfaces: ['runtimePanel'],
+}
+
+const OPENCODE_CREW_SLOT: RuntimeUiSlot = {
+  id: 'opencode:crew',
+  name: 'agents',
+  label: 'Agents',
+  description: 'Show opencode native agents.',
+  argumentHint: '',
+  iconKey: 'crew',
+  commandText: '/agents ',
+  surfaces: ['runtimePanel'],
+}
+
 export function createOpencodeRuntimePresentation(
   commands: OpencodeCommand[] = [],
 ): RuntimePresentationCapabilities {
@@ -69,6 +146,13 @@ export function createOpencodeRuntimePresentation(
       OPENCODE_STATUS_SLOT,
       OPENCODE_MODEL_SLOT,
       OPENCODE_TERMINAL_SLOT,
+      OPENCODE_PROGRESS_SLOT,
+      OPENCODE_DIFF_SLOT,
+      OPENCODE_APPROVALS_SLOT,
+      OPENCODE_MCP_SLOT,
+      OPENCODE_FILESYSTEM_SLOT,
+      OPENCODE_CONFIG_SLOT,
+      OPENCODE_CREW_SLOT,
     ],
     skills: [],
   }

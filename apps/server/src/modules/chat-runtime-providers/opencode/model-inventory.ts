@@ -1,4 +1,4 @@
-import type { Config, ProviderListResponse } from '@opencode-ai/sdk'
+import type { Agent as OpenCodeAgent, Config, ProviderListResponse } from '@opencode-ai/sdk'
 
 import type {
   RuntimeKind,
@@ -21,6 +21,15 @@ export interface OpencodeRuntimeProviderGroup {
   label: string
   providerKind: ProviderKind
   modelCount: number
+}
+
+export interface OpencodeRuntimeAgentDescriptor {
+  id: string
+  label: string
+  description: string | null
+  mode: OpenCodeAgent['mode']
+  builtIn: boolean
+  modelId: string | null
 }
 
 export async function listOpencodeRuntimeModels(input: {
@@ -55,6 +64,37 @@ export async function listOpencodeRuntimeProviderGroups(input: {
     }))
     .filter(group => group.modelCount > 0)
     .sort((left, right) => left.label.localeCompare(right.label))
+}
+
+export async function listOpencodeRuntimeAgents(input: {
+  runtimeKind: RuntimeKind
+  workspacePath?: string
+}): Promise<OpencodeRuntimeAgentDescriptor[]> {
+  const lease = await acquireOpencodeRuntimeResource({
+    runtimeKind: input.runtimeKind,
+    providerTargetId: OPENCODE_RUNTIME_NATIVE_PROVIDER_TARGET_ID,
+    chatSessionId: OPENCODE_MODEL_CATALOG_SCOPE_ID,
+    config: {} satisfies Config,
+  })
+  try {
+    const result = await lease.resource.client.app.agents({
+      ...(input.workspacePath ? { query: { directory: input.workspacePath } } : {}),
+    })
+    if (result.error || !result.data) {
+      return []
+    }
+    return result.data.map(agent => ({
+      id: agent.name,
+      label: agent.name,
+      description: agent.description ?? null,
+      mode: agent.mode,
+      builtIn: agent.builtIn,
+      modelId: agent.model ? toOpenCodeModelRef(agent.model.providerID, agent.model.modelID) : null,
+    })).sort((left, right) => left.label.localeCompare(right.label))
+  }
+  finally {
+    lease.release()
+  }
 }
 
 export async function listOpencodeRuntimeModelsForProviderTarget(input: {

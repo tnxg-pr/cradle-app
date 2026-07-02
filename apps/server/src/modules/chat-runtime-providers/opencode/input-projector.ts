@@ -5,16 +5,43 @@
  */
 
 import type { UIMessage } from 'ai'
-import type { TextPartInput } from '@opencode-ai/sdk'
+import type { FilePartInput, TextPartInput } from '@opencode-ai/sdk'
 
 import type { StreamTurnInput } from '../../chat-runtime/runtime-provider-types'
 import { extractUiMessageText, projectTextOnlyInput } from '../../chat-runtime/ui-message-input'
 
-export function projectOpencodePromptParts(message: StreamTurnInput['message']): TextPartInput[] {
-  return [{
-    type: 'text',
-    text: projectTextOnlyInput(message, 'opencode provider'),
-  }]
+export type OpencodePromptPartInput = TextPartInput | FilePartInput
+
+type MessagePart = UIMessage['parts'][number]
+
+export function projectOpencodePromptParts(message: StreamTurnInput['message']): OpencodePromptPartInput[] {
+  if (typeof message === 'string') {
+    return [{
+      type: 'text',
+      text: projectTextOnlyInput(message, 'opencode provider'),
+    }]
+  }
+
+  const unsupportedParts = message.parts.filter(part => part.type !== 'text' && part.type !== 'file')
+  if (unsupportedParts.length > 0) {
+    const details = unsupportedParts.map(part => part.type).join(', ')
+    throw new Error(`opencode provider only supports text and file input; unsupported parts: ${details}`)
+  }
+
+  const parts: OpencodePromptPartInput[] = []
+  const text = extractUiMessageText(message).trim()
+  if (text) {
+    parts.push({ type: 'text', text })
+  }
+  for (const part of message.parts) {
+    if (isFilePart(part)) {
+      parts.push(projectOpenCodeFilePart(part))
+    }
+  }
+  if (parts.length === 0) {
+    throw new Error('opencode provider requires non-empty text or file input')
+  }
+  return parts
 }
 
 export function readOpencodeSlashCommandInvocation(
@@ -62,4 +89,17 @@ function formatTranscriptMessage(message: UIMessage): string {
     return `${message.role}: [non-text content omitted]`
   }
   return `${message.role}: ${text}`
+}
+
+function isFilePart(part: MessagePart): part is Extract<MessagePart, { type: 'file' }> {
+  return part.type === 'file'
+}
+
+function projectOpenCodeFilePart(part: Extract<MessagePart, { type: 'file' }>): FilePartInput {
+  return {
+    type: 'file',
+    mime: part.mediaType,
+    ...(part.filename ? { filename: part.filename } : {}),
+    url: part.url,
+  }
 }

@@ -99,6 +99,8 @@ export class OpencodeEventStreamProjector {
 
       case 'todo.updated':
       case 'command.executed':
+      case 'permission.updated':
+      case 'permission.replied':
       case 'session.status':
       case 'session.idle':
       case 'session.compacted':
@@ -306,6 +308,29 @@ export class OpencodeEventStreamProjector {
       ? { type: 'text-delta', id: part.id, delta }
       : { type: 'reasoning-delta', id: part.id, delta }
   }
+}
+
+export function readOpencodeTerminalAssistantForTurn(
+  event: OpencodeStreamEvent,
+  input: {
+    sessionId: string
+    userMessageId: string
+  },
+): OpencodeAssistantMessage | null {
+  if (event.type !== 'message.updated') {
+    return null
+  }
+  const info = event.properties.info
+  if (
+    info.role !== 'assistant'
+    || info.sessionID !== input.sessionId
+    || info.parentID !== input.userMessageId
+  ) {
+    return null
+  }
+  return info.time.completed !== undefined || info.finish !== undefined || info.error !== undefined
+    ? info
+    : null
 }
 
 function readTextDelta(previousText: string, nextText: string): string {

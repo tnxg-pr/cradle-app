@@ -29,6 +29,13 @@ describe('createOpencodeRuntimePresentation', () => {
         expect.objectContaining({ id: 'opencode:status', name: 'status', iconKey: 'status' }),
         expect.objectContaining({ id: 'opencode:model', name: 'model', iconKey: 'model' }),
         expect.objectContaining({ id: 'opencode:terminal', name: 'terminal', iconKey: 'terminal' }),
+        expect.objectContaining({ id: 'opencode:progress', name: 'progress', iconKey: 'progress' }),
+        expect.objectContaining({ id: 'opencode:diff', name: 'diff', iconKey: 'diff' }),
+        expect.objectContaining({ id: 'opencode:approvals', name: 'approvals', iconKey: 'approvals' }),
+        expect.objectContaining({ id: 'opencode:mcp', name: 'mcp', iconKey: 'mcp' }),
+        expect.objectContaining({ id: 'opencode:filesystem', name: 'filesystem', iconKey: 'filesystem' }),
+        expect.objectContaining({ id: 'opencode:config', name: 'config', iconKey: 'config' }),
+        expect.objectContaining({ id: 'opencode:crew', name: 'agents', iconKey: 'crew' }),
       ]),
     )
   })
@@ -41,7 +48,7 @@ describe('OPENCODE_RUNTIME_CAPABILITIES', () => {
       supportsLastTurnRollback: true,
       supportsUiSlotStates: true,
       supportsSteerTurn: false,
-      supportsRuntimeSettings: false,
+      supportsRuntimeSettings: true,
     })
   })
 })

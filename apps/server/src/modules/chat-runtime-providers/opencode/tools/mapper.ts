@@ -4,7 +4,7 @@
  * Position: opencode provider package tool envelope mapper.
  */
 
-import type { ToolPart } from '@opencode-ai/sdk'
+import type { Permission, ToolPart } from '@opencode-ai/sdk'
 
 import {
   createBuiltinToolCallInputPayload,
@@ -26,6 +26,48 @@ export function buildOpencodeToolOutput(part: ToolPart) {
     apiName: part.tool,
     args: part.state.input,
     result: projectToolResult(part),
+  })
+}
+
+export function buildOpencodePermissionInput(permission: Permission) {
+  return createBuiltinToolCallInputPayload({
+    identifier: OpencodeToolIdentifier,
+    apiName: 'approval.permissions',
+    args: {
+      id: permission.id,
+      type: permission.type,
+      title: permission.title,
+      pattern: permission.pattern,
+      sessionID: permission.sessionID,
+      messageID: permission.messageID,
+      callID: permission.callID ?? null,
+      metadata: permission.metadata,
+      createdAt: permission.time.created,
+    },
+  })
+}
+
+export function buildOpencodePermissionOutput(input: {
+  permission: Permission
+  response: 'once' | 'reject'
+  approved: boolean
+  reason?: string
+}) {
+  return createBuiltinToolCallResultPayload({
+    identifier: OpencodeToolIdentifier,
+    apiName: 'approval.permissions',
+    args: {
+      id: input.permission.id,
+      type: input.permission.type,
+      title: input.permission.title,
+      pattern: input.permission.pattern,
+      metadata: input.permission.metadata,
+    },
+    result: {
+      response: input.response,
+      approved: input.approved,
+      ...(input.reason ? { reason: input.reason } : {}),
+    },
   })
 }
 

@@ -26,7 +26,7 @@ export const OPENCODE_RUNTIME_CAPABILITIES = {
   supportsSteerTurn: false,
   supportsShellExecution: true,
   supportsLastTurnRollback: true,
-  supportsRuntimeSettings: false,
+  supportsRuntimeSettings: true,
   supportsUiSlotStates: true,
   supportsDynamicCapabilities: false,
   sessionModelSwitch: 'in-session',

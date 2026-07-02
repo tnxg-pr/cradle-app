@@ -1,6 +1,32 @@
 import { describe, expect, it } from 'vitest'
 
-import { projectOpencodeQuickQuestionParts, readOpencodeSlashCommandInvocation } from './input-projector'
+import { projectOpencodePromptParts, projectOpencodeQuickQuestionParts, readOpencodeSlashCommandInvocation } from './input-projector'
+
+describe('projectOpencodePromptParts', () => {
+  it('preserves AI SDK file parts as OpenCode file parts', () => {
+    expect(projectOpencodePromptParts({
+      id: 'user-1',
+      role: 'user',
+      parts: [
+        { type: 'text', text: 'Inspect this screenshot.' },
+        {
+          type: 'file',
+          mediaType: 'image/png',
+          filename: 'screenshot.png',
+          url: 'data:image/png;base64,abc123',
+        },
+      ],
+    })).toEqual([
+      { type: 'text', text: 'Inspect this screenshot.' },
+      {
+        type: 'file',
+        mime: 'image/png',
+        filename: 'screenshot.png',
+        url: 'data:image/png;base64,abc123',
+      },
+    ])
+  })
+})
 
 describe('projectOpencodeQuickQuestionParts', () => {
   it('wraps transcript and question in a single text prompt part', () => {

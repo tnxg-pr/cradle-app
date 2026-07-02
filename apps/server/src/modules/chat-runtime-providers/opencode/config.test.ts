@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
+import { addHostMcpServer, removeHostMcpServer } from '../../../plugins/mcp-registry'
 import type { RuntimeProviderTargetProfile } from '../../chat-runtime/runtime-provider-types'
 import { resolveOpencodeConfig } from './config'
 
@@ -22,6 +23,11 @@ function createProfile(input: Partial<RuntimeProviderTargetProfile> & {
 }
 
 describe('resolveOpencodeConfig', () => {
+  afterEach(() => {
+    removeHostMcpServer('browser-use')
+    removeHostMcpServer('nowledge-mem')
+  })
+
   it('projects an OpenAI-compatible target into opencode provider config and provider/model id', async () => {
     const resolved = await resolveOpencodeConfig({
       profile: createProfile({
@@ -178,5 +184,47 @@ describe('resolveOpencodeConfig', () => {
       },
     })
     expect(resolved.config.provider?.['cradle-manual-target-1'].options).not.toHaveProperty('apiKey')
+  })
+
+  it('projects plugin-registered MCP servers into opencode config', async () => {
+    addHostMcpServer({
+      transport: 'stdio',
+      name: 'browser-use',
+      command: 'node',
+      args: ['/plugins/browser-use/dist/mcp-server.mjs'],
+      env: { BROWSER_BACKEND_SOCKET: '/tmp/cradle-browser.sock' },
+    })
+    addHostMcpServer({
+      transport: 'streamable-http',
+      name: 'nowledge-mem',
+      url: 'https://nowledge.example.test/mcp',
+      headers: { Authorization: 'Bearer nowledge-secret' },
+    })
+
+    const resolved = await resolveOpencodeConfig({
+      profile: createProfile({
+        providerKind: 'openai-compatible',
+        configJson: JSON.stringify({
+          baseUrl: 'https://openai-compatible.example.test/v1',
+          model: 'gpt-5.5',
+        }),
+      }),
+      readSecret: () => 'secret-value',
+    })
+
+    expect(resolved.config.mcp).toEqual({
+      'browser-use': {
+        type: 'local',
+        command: ['node', '/plugins/browser-use/dist/mcp-server.mjs'],
+        environment: { BROWSER_BACKEND_SOCKET: '/tmp/cradle-browser.sock' },
+        enabled: true,
+      },
+      'nowledge-mem': {
+        type: 'remote',
+        url: 'https://nowledge.example.test/mcp',
+        headers: { Authorization: 'Bearer nowledge-secret' },
+        enabled: true,
+      },
+    })
   })
 })

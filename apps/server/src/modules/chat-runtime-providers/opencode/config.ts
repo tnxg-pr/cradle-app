@@ -6,6 +6,8 @@
 
 import type { Config } from '@opencode-ai/sdk'
 
+import type { RegisteredMcpServer } from '../../../plugins/mcp-registry'
+import { getRegisteredMcpServers } from '../../../plugins/mcp-registry'
 import type { ModelRegistryMappingEntry, ModelsDevModel } from '../../model-registry/model-info-registry'
 import { lookupModelRawExact } from '../../model-registry/model-info-registry'
 import type { RuntimeProviderTargetProfile } from '../../chat-runtime/runtime-provider-types'
@@ -46,6 +48,7 @@ interface OpencodeProviderProjection {
 }
 
 type OpencodeModelConfig = NonNullable<NonNullable<Config['provider']>[string]['models']>[string]
+type OpencodeMcpConfig = NonNullable<Config['mcp']>[string]
 
 const DEFAULT_OPENAI_COMPATIBLE_MODEL = 'gpt-4o'
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-5'
@@ -67,6 +70,7 @@ export async function resolveOpencodeConfig(input: ResolveOpencodeConfigInput): 
       models: projection.models,
     },
   }
+  const mcpConfig = buildOpencodeMcpServersConfig()
 
   const modelId = projection.modelID
     ? `${projection.providerID}/${projection.modelID}`
@@ -76,6 +80,7 @@ export async function resolveOpencodeConfig(input: ResolveOpencodeConfigInput): 
     config: {
       model: modelId ?? undefined,
       provider: providerConfig,
+      ...(Object.keys(mcpConfig).length > 0 ? { mcp: mcpConfig } : {}),
     },
     model: projection.modelID
       ? {
@@ -325,4 +330,28 @@ function readModelID(modelId: string | null | undefined, fallback: string): stri
 
 function createOpencodeProviderId(profile: RuntimeProviderTargetProfile): string {
   return `cradle-${profile.providerTargetKind}-${profile.providerTargetId.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+}
+
+function buildOpencodeMcpServersConfig(): NonNullable<Config['mcp']> {
+  return Object.fromEntries(
+    Object.entries(getRegisteredMcpServers()).map(([name, config]) => [name, projectOpencodeMcpServer(config)]),
+  )
+}
+
+function projectOpencodeMcpServer(config: RegisteredMcpServer): OpencodeMcpConfig {
+  if (config.transport === 'stdio') {
+    return {
+      type: 'local',
+      command: [config.command, ...config.args],
+      enabled: true,
+      ...(Object.keys(config.env).length > 0 ? { environment: config.env } : {}),
+    }
+  }
+
+  return {
+    type: 'remote',
+    url: config.url,
+    enabled: true,
+    ...(Object.keys(config.headers).length > 0 ? { headers: config.headers } : {}),
+  }
 }
