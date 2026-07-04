@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { describe, expect, it, vi } from 'vitest'
 
 const electronMocks = vi.hoisted(() => ({
@@ -75,6 +79,47 @@ describe('desktop server process identity', () => {
     expect(isDesktopServerProcessCommand(
       '/Applications/Codex.app/Contents/Resources/node_repl',
     )).toBe(false)
+  })
+})
+
+describe('desktop server inbound access preferences', () => {
+  it('defaults to local-only server binding', async () => {
+    const { desktopServerBindHostForAccessMode, readDesktopServerAccessMode } = await import('./server-process')
+    const dataDir = mkdtempSync(join(tmpdir(), 'cradle-desktop-server-access-'))
+
+    try {
+      expect(readDesktopServerAccessMode(dataDir)).toBe('local')
+      expect(desktopServerBindHostForAccessMode('local')).toBe('127.0.0.1')
+    }
+    finally {
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('reads the persisted other-device access mode before spawning the server', async () => {
+    const { desktopServerBindHostForAccessMode, readDesktopServerAccessMode } = await import('./server-process')
+    const dataDir = mkdtempSync(join(tmpdir(), 'cradle-desktop-server-access-'))
+
+    try {
+      mkdirSync(join(dataDir, 'preferences'), { recursive: true })
+      writeFileSync(join(dataDir, 'preferences/network.json'), JSON.stringify({
+        proxyEnabled: true,
+        proxyMode: 'system',
+        customProxyUrl: null,
+        inbound: {
+          serverAccessMode: 'network',
+          managedRelayAccessMode: 'local',
+          managedRelayPublicUrl: null,
+        },
+      }))
+
+      const accessMode = readDesktopServerAccessMode(dataDir)
+      expect(accessMode).toBe('network')
+      expect(desktopServerBindHostForAccessMode(accessMode)).toBe('0.0.0.0')
+    }
+    finally {
+      rmSync(dataDir, { recursive: true, force: true })
+    }
   })
 })
 

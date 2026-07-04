@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,37 +9,6 @@ import { DEFAULT_BROWSER_PANEL_OWNER_ID, useBrowserPanelStore } from '~/store/br
 import { BrowserPanel } from './browser-panel'
 
 const diffViewerRender = vi.hoisted(() => vi.fn())
-
-type TestWebviewPrototype = HTMLElement & {
-  loadURL?: (url: string) => Promise<void>
-  goBack?: () => void
-  goForward?: () => void
-  reload?: () => void
-  canGoBack?: () => boolean
-  canGoForward?: () => boolean
-  getURL?: () => string
-  getTitle?: () => string
-  isLoading?: () => boolean
-  getWebContentsId?: () => number
-  executeJavaScript?: (code: string) => Promise<unknown>
-}
-
-function installTestWebviewPrototype() {
-  const prototype = HTMLElement.prototype as TestWebviewPrototype
-  const loadURL = vi.fn(() => Promise.resolve())
-  prototype.loadURL = loadURL
-  prototype.getWebContentsId = vi.fn(() => 1)
-  prototype.goBack = vi.fn()
-  prototype.goForward = vi.fn()
-  prototype.reload = vi.fn()
-  prototype.canGoBack = vi.fn(() => false)
-  prototype.canGoForward = vi.fn(() => false)
-  prototype.getURL = vi.fn(() => 'about:blank')
-  prototype.getTitle = vi.fn(() => '')
-  prototype.isLoading = vi.fn(() => false)
-  prototype.executeJavaScript = vi.fn(() => Promise.resolve(undefined))
-  return { loadURL }
-}
 
 class TestResizeObserver {
   observe() {}
@@ -143,9 +114,16 @@ vi.mock('./workspace-diff-viewer', () => ({
   },
 }))
 
-vi.mock('~/lib/electron', async importOriginal => ({
-  ...(await importOriginal<typeof import('~/lib/electron')>()),
+vi.mock('~/lib/electron', () => ({
+  getServerUrl: () => 'http://localhost:3000',
+  getServerWebSocketUrl: (path: string) => new URL(path, 'ws://localhost:3000').toString(),
+  isLocalMode: () => false,
+  isTearoffWindow: false,
   isElectron: true,
+  nativeIpc: {},
+  platform: 'darwin',
+  tearoffSurfaceId: null,
+  tearoffSurfaceRoute: null,
 }))
 
 vi.mock('~/features/workspace/workspace-file-editor', () => ({
@@ -164,7 +142,6 @@ describe('browserPanel rendering', () => {
     diffViewerRender.mockClear()
     vi.stubGlobal('ResizeObserver', TestResizeObserver)
     browserBridge = installTestBrowserBridge()
-    installTestWebviewPrototype()
     useBrowserPanelStore.setState({
       activeOwnerId: DEFAULT_BROWSER_PANEL_OWNER_ID,
       owners: {},
@@ -270,25 +247,5 @@ describe('browserPanel rendering', () => {
     })
 
     expect(browserBridge.open).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not imperatively reload the initial about blank webview', () => {
-    const webview = installTestWebviewPrototype()
-    useBrowserPanelStore.getState().createTab('about:blank')
-
-    render(<BrowserPanel />)
-
-    expect(webview.loadURL).not.toHaveBeenCalled()
-  })
-
-  it('does not imperatively reload an equivalent current webview URL', () => {
-    const webview = installTestWebviewPrototype()
-    const prototype = HTMLElement.prototype as TestWebviewPrototype
-    prototype.getURL = vi.fn(() => 'https://www.baidu.com/')
-    useBrowserPanelStore.getState().createTab('https://www.baidu.com')
-
-    render(<BrowserPanel />)
-
-    expect(webview.loadURL).not.toHaveBeenCalled()
   })
 })

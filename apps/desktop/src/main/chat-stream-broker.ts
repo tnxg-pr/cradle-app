@@ -260,6 +260,9 @@ export class ChatStreamBroker {
       if (canReuseEntry(existing, request)) {
         return existing
       }
+      // Suppress the expected AbortError from the replaced entry's in-flight fetch,
+      // so it doesn't surface as an unhandled promise rejection.
+      existing.handlePromise.catch(() => {})
       this.closeEntry(existing, 'aborted')
       existing.controller.abort()
     }

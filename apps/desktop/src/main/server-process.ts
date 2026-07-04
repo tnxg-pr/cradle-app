@@ -31,6 +31,7 @@ const SAFE_STORAGE_PREFIX = 'v1-safe:'
 const PLAIN_STORAGE_PREFIX = 'v1-plain:'
 const KEYCHAIN_BACKUP_SUFFIX = '.keychain-backup'
 const CLI_SERVER_LOCATOR_FILE = 'cli/server.json'
+const NETWORK_PREFERENCES_FILE = 'preferences/network.json'
 const SERVER_EXIT_DIAGNOSTICS_FILE = 'server-process-exits.ndjson'
 const DEV_SERVER_ENTRY_PATTERN = '/apps/server/src/index.ts'
 const PACKAGED_SERVER_ENTRY_PATTERN = '/server/dist/main.js'
@@ -76,6 +77,11 @@ const ServerLocatorSchema = z.object({
   version: z.string().optional(),
   updatedAt: z.string().optional(),
 })
+const DesktopServerAccessModeSchema = z.object({
+  inbound: z.object({
+    serverAccessMode: z.enum(['local', 'network']).default('local'),
+  }).default({ serverAccessMode: 'local' }),
+}).passthrough()
 let currentServerUrl = ''
 const recentServerOutputLines: string[] = []
 
@@ -106,6 +112,25 @@ function resolveDevServerEntry(): string {
   return entry
 }
 
+type DesktopServerAccessMode = 'local' | 'network'
+
+export function desktopServerBindHostForAccessMode(accessMode: DesktopServerAccessMode): string {
+  return accessMode === 'network' ? '0.0.0.0' : '127.0.0.1'
+}
+
+export function readDesktopServerAccessMode(dataDir: string): DesktopServerAccessMode {
+  const preferencesPath = join(dataDir, NETWORK_PREFERENCES_FILE)
+  if (!existsSync(preferencesPath)) {
+    return 'local'
+  }
+  try {
+    return DesktopServerAccessModeSchema.parse(JSON.parse(readFileSync(preferencesPath, 'utf8'))).inbound.serverAccessMode
+  }
+  catch {
+    return 'local'
+  }
+}
+
 /**
  * Start the Cradle server as a forked child process.
  * Returns the full URL the server is listening on.
@@ -127,8 +152,8 @@ export async function startServer(): Promise<string> {
   }
 
   const port = await getPort({ port: [21423, 21424, 21425, 21426] })
-  const host = '127.0.0.1'
-  currentServerUrl = `http://${host}:${port}`
+  const host = desktopServerBindHostForAccessMode(readDesktopServerAccessMode(dataDir))
+  currentServerUrl = `http://127.0.0.1:${port}`
 
   await spawnServer({ host, port, dataDir, credentialSecret })
 

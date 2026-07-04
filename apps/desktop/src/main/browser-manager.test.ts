@@ -102,9 +102,27 @@ const electronMocks = vi.hoisted(() => {
   }
 
   class FakeBrowserWindow {
-    readonly contentView = {
-      addChildView: vi.fn(),
-      removeChildView: vi.fn(),
+    readonly contentView: {
+      children: FakeWebContentsView[]
+      addChildView: ReturnType<typeof vi.fn>
+      removeChildView: ReturnType<typeof vi.fn>
+    }
+
+    constructor() {
+      const children: FakeWebContentsView[] = []
+      this.contentView = {
+        children,
+        addChildView: vi.fn((view: FakeWebContentsView) => {
+          children.push(view)
+        }),
+        removeChildView: vi.fn((view: FakeWebContentsView) => {
+          const index = children.indexOf(view)
+          if (index === -1) {
+            throw new Error('View is not attached')
+          }
+          children.splice(index, 1)
+        }),
+      }
     }
   }
 
@@ -133,7 +151,6 @@ const electronMocks = vi.hoisted(() => {
 vi.mock('electron', () => electronMocks)
 
 const bounds = { x: 0, y: 0, width: 900, height: 600 }
-const hiddenBounds = { x: -10000, y: -10000, width: 1, height: 1 }
 const previousRendererUrl = process.env.ELECTRON_RENDERER_URL
 
 async function flushBrowserWork(): Promise<void> {
@@ -143,10 +160,16 @@ async function flushBrowserWork(): Promise<void> {
 }
 
 async function createManager() {
+  const { manager } = await createManagerWithWindow()
+  return manager
+}
+
+async function createManagerWithWindow() {
   const { DesktopBrowserManager } = await import('./browser-manager')
   const manager = new DesktopBrowserManager()
-  manager.setWindow(new electronMocks.BrowserWindow() as never)
-  return manager
+  const window = new electronMocks.BrowserWindow()
+  manager.setWindow(window as never)
+  return { manager, window }
 }
 
 afterEach(() => {
@@ -281,7 +304,7 @@ describe('desktop browser manager tab runtime retention', () => {
     await vi.advanceTimersByTimeAsync(31_000)
 
     expect(view.webContents.close).not.toHaveBeenCalled()
-    expect(view.setBounds).toHaveBeenLastCalledWith(hiddenBounds)
+    expect(view.setBounds).toHaveBeenLastCalledWith(bounds)
     expect(view.setVisible).toHaveBeenLastCalledWith(false)
 
     manager.setPanelBounds({ threadId, bounds, surface: 'native' })
@@ -312,14 +335,37 @@ describe('desktop browser manager tab runtime retention', () => {
     expect(view.setVisible).toHaveBeenLastCalledWith(true)
 
     manager.hide({ threadId })
-    expect(view.setBounds).toHaveBeenLastCalledWith(hiddenBounds)
+    expect(view.setBounds).toHaveBeenLastCalledWith(bounds)
     expect(view.setVisible).toHaveBeenLastCalledWith(false)
 
     manager.selectTab({ threadId, tabId })
     await flushBrowserWork()
 
-    expect(view.setBounds).toHaveBeenLastCalledWith(hiddenBounds)
+    expect(view.setBounds).toHaveBeenLastCalledWith(bounds)
     expect(view.setVisible).toHaveBeenLastCalledWith(false)
+
+    manager.dispose()
+  })
+
+  it('updates attached runtime bounds without reattaching the native view', async () => {
+    const { manager, window } = await createManagerWithWindow()
+    const threadId = 'thread-1'
+    const nextBounds = { x: 12, y: 34, width: 800, height: 500 }
+
+    manager.open({ threadId, initialUrl: 'https://one.test/' })
+    manager.setPanelBounds({ threadId, bounds, surface: 'native' })
+    await flushBrowserWork()
+
+    const view = electronMocks.WebContentsView.instances[0]!
+    expect(window.contentView.addChildView).toHaveBeenCalledTimes(1)
+    expect(window.contentView.removeChildView).not.toHaveBeenCalled()
+
+    manager.setPanelBounds({ threadId, bounds: nextBounds, surface: 'native' })
+    await flushBrowserWork()
+
+    expect(view.setBounds).toHaveBeenLastCalledWith(nextBounds)
+    expect(window.contentView.addChildView).toHaveBeenCalledTimes(1)
+    expect(window.contentView.removeChildView).not.toHaveBeenCalled()
 
     manager.dispose()
   })

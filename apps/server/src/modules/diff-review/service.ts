@@ -2851,13 +2851,6 @@ function normalizeGeneratedCommitPlan(input: {
   })
 
   const { groups: normalized } = normalizeCommitPlanGroups(input.revision.id, groups)
-  const plannedFileIds = new Set(normalized.flatMap((group) => group.fileIds))
-  const missingFiles = input.files.filter((file) => !plannedFileIds.has(file.id))
-  if (missingFiles.length > 0) {
-    throw new Error(
-      `Commit plan omitted changed files: ${missingFiles.map((file) => file.path).join(', ')}`
-    )
-  }
   return { groups: normalized, rationale }
 }
 

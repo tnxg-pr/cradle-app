@@ -25,8 +25,6 @@ import {
   TerminalBoxLine as SquareTerminalIcon,
 } from '@mingcute/react'
 import type { FileUIPart } from 'ai'
-
-import { Spinner } from '~/components/ui/spinner'
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
   lazy,
@@ -50,6 +48,7 @@ import {
 } from '~/components/ui/empty'
 import { Input } from '~/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover'
+import { Spinner } from '~/components/ui/spinner'
 import {
   submitChatComposerFileIngress,
   submitChatPromptIngress,
@@ -96,6 +95,7 @@ import {
   BROWSER_NATIVE_SURFACE_OCCLUSION_PROPS,
   BROWSER_NATIVE_SURFACE_OCCLUSION_SELECTOR,
 } from './native-surface-occlusion'
+import { useNativeBrowserSurfaceSuppressionStore } from './native-surface-suppression'
 import { PlanDocumentViewer } from './plan-document-viewer'
 import type { PlanRefineEditorDirtyDetail, PlanRefineEditorSaveDetail } from './plan-refine-editor'
 import {
@@ -182,7 +182,7 @@ interface BrowserAnnotationRuntimeEvent {
   sourceTitle: string | null
 }
 
-const BROWSER_BOUNDS_SYNC_STABLE_FRAME_TARGET = 2
+const BROWSER_BOUNDS_SYNC_STABLE_FRAME_TARGET = 1
 const BROWSER_SCREENSHOT_CHUNK_SIZE = 0x8000
 const BROWSER_NATIVE_OCCLUSION_MARGIN = 6
 const BROWSER_NATIVE_OCCLUSION_MIN_SIZE = 32
@@ -1235,6 +1235,9 @@ export function BrowserPanel({
   const selectBrowserHistory = selectOwnerBrowserHistory(resolvedOwnerId)
   const selectBrowserAnnotations = selectOwnerBrowserAnnotations(resolvedOwnerId)
   const browserState = useBrowserPanelStore(selectBrowserState)
+  const nativeSurfaceSuppressCount = useNativeBrowserSurfaceSuppressionStore(
+    state => state.suppressCount,
+  )
   const recentHistory = useBrowserPanelStore(selectBrowserHistory)
   const requestedTab = useBrowserPanelStore(
     state => state.owners[resolvedOwnerId]?.requestedTab ?? null,
@@ -1508,12 +1511,14 @@ export function BrowserPanel({
       nativeSurfaceVisible
       && browserState?.open
       && activePanelTab?.kind === 'browser'
-      && !activeBrowserTabIsBlank,
+      && !activeBrowserTabIsBlank
+      && nativeSurfaceSuppressCount === 0,
     ), [
     activeBrowserTabIsBlank,
     activePanelTab?.kind,
     browserState?.open,
     nativeSurfaceVisible,
+    nativeSurfaceSuppressCount,
   ])
 
   useEffect(() => {
@@ -1672,6 +1677,9 @@ export function BrowserPanel({
       : new ResizeObserver(scheduleStableBoundsSyncFromOcclusionObserver)
 
     const syncObservedOccluders = () => {
+      if (typeof document === 'undefined' || !document.body) {
+        return
+      }
       const nextOccluders = new Set(
         document.querySelectorAll<HTMLElement>(BROWSER_NATIVE_SURFACE_OCCLUSION_SELECTOR),
       )
@@ -2904,7 +2912,10 @@ export function BrowserPanel({
                 }}
               />
               {suggestionsOpen && suggestions.length > 0 && (
-                <div className="absolute left-0 right-0 top-8 z-20 overflow-hidden rounded-md border border-border bg-popover py-1 shadow-lg">
+                <div
+                  className="absolute left-0 right-0 top-8 z-20 overflow-hidden rounded-md border border-border bg-popover py-1 shadow-lg"
+                  {...BROWSER_NATIVE_SURFACE_OCCLUSION_PROPS}
+                >
                   {suggestions.map(suggestion => (
                     <Button
                       key={suggestion.id}

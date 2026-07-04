@@ -2125,7 +2125,6 @@ export class DesktopBrowserManager {
     const nextBoundsSignature = browserBoundsSignature(bounds)
     if (this.attachedRuntimeKey === runtime.key) {
       this.setRuntimeViewHidden(runtime, false)
-      this.bringRuntimeViewToFront(runtime)
       if (this.attachedBoundsSignature === nextBoundsSignature) {
         return
       }
@@ -2148,6 +2147,15 @@ export class DesktopBrowserManager {
       return
     }
 
+    const children = window.contentView.children
+    if (children.at(-1) === runtime.view) {
+      return
+    }
+    if (!children.includes(runtime.view)) {
+      window.contentView.addChildView(runtime.view)
+      return
+    }
+
     try {
       window.contentView.removeChildView(runtime.view)
     }
@@ -2167,8 +2175,6 @@ export class DesktopBrowserManager {
     const runtime = this.runtimes.get(this.attachedRuntimeKey)
     if (runtime) {
       this.setRuntimeViewHidden(runtime, true)
-      runtime.view.setBounds(HIDDEN_BROWSER_BOUNDS)
-      this.window.contentView.removeChildView(runtime.view)
     }
     this.attachedRuntimeKey = null
     this.attachedBoundsSignature = null
@@ -2176,11 +2182,25 @@ export class DesktopBrowserManager {
 
   private setRuntimeViewHidden(runtime: LiveTabRuntime, hidden: boolean): void {
     const nativeView = runtime.view as typeof runtime.view & NativeBrowserViewVisibility
-    if (hidden) {
-      nativeView.setVisible?.(false)
+    if (!nativeView.setVisible) {
+      if (hidden) {
+        runtime.view.setBounds(HIDDEN_BROWSER_BOUNDS)
+      }
       return
     }
-    nativeView.setVisible?.(true)
+    if (hidden) {
+      nativeView.setVisible(false)
+      return
+    }
+    nativeView.setVisible(true)
+  }
+
+  private removeRuntimeView(runtime: LiveTabRuntime): void {
+    const window = this.window
+    if (!window || !window.contentView.children.includes(runtime.view)) {
+      return
+    }
+    window.contentView.removeChildView(runtime.view)
   }
 
   private ensureLiveRuntime(threadId: ThreadId, tabId: string): LiveTabRuntime {
@@ -2500,6 +2520,7 @@ export class DesktopBrowserManager {
     if (this.attachedRuntimeKey === key) {
       this.detachAttachedRuntime()
     }
+    this.removeRuntimeView(runtime)
 
     this.runtimes.delete(key)
     const webContents = runtime.webContents

@@ -5,7 +5,6 @@ import { extname, isAbsolute, join, relative } from 'node:path'
 import { createServices, getIpcContext, IpcMethod, IpcService } from '@cradle/ipc'
 import { app, BrowserWindow, dialog, screen, shell as nativeLauncher, systemPreferences } from 'electron'
 
-import { BrowserTabScriptsService } from './browser-tab-scripts'
 import type {
   ChatEventTailBroker,
   DesktopChatEventTailAbortRequest,
@@ -1230,6 +1229,5 @@ export function createNativeServices(context: NativeServicesContext) {
     DesktopChatStreamService,
     DesktopChatEventTailService,
     MacCaptureService,
-    BrowserTabScriptsService,
   ] as const)
 }
