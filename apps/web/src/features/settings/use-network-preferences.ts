@@ -13,11 +13,19 @@ import { putPreferencesNetwork } from '~/api-gen/sdk.gen'
 export type NetworkProxyMode = 'system' | 'custom' | 'environment'
 export type NetworkProxyStatusMode = NetworkProxyMode | 'off'
 export type NetworkProxySource = 'none' | 'system' | 'custom' | 'environment'
+export type NetworkInboundAccessMode = 'local' | 'network'
+
+export interface NetworkInboundPreferences {
+  serverAccessMode: NetworkInboundAccessMode
+  managedRelayAccessMode: NetworkInboundAccessMode
+  managedRelayPublicUrl: string | null
+}
 
 export interface NetworkPreferences {
   proxyEnabled: boolean
   proxyMode: NetworkProxyMode
   customProxyUrl: string | null
+  inbound: NetworkInboundPreferences
 }
 
 export interface NetworkProxyStatus {
@@ -33,6 +41,15 @@ const NetworkPreferencesSchema = z.object({
   proxyEnabled: z.boolean().default(true),
   proxyMode: z.enum(['system', 'custom', 'environment']).default('system'),
   customProxyUrl: z.string().nullable().default(null),
+  inbound: z.object({
+    serverAccessMode: z.enum(['local', 'network']).default('local'),
+    managedRelayAccessMode: z.enum(['local', 'network']).default('local'),
+    managedRelayPublicUrl: z.string().nullable().default(null),
+  }).default({
+    serverAccessMode: 'local',
+    managedRelayAccessMode: 'local',
+    managedRelayPublicUrl: null,
+  }),
 })
 
 const NetworkProxyStatusSchema = z.object({

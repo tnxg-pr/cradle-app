@@ -20,7 +20,7 @@ export default {
   'chrome.confirm': 'Confirm',
   'chrome.errorTitle': 'Isolation action failed',
   'chrome.openSession': 'Open session {{id}}',
-  'chat.isolate': 'Isolate',
+  'chat.isolate': 'Worktree',
   'chat.isolatePending': 'Isolation pending',
   'chat.isolateTooltip': 'Run in an isolated git worktree',
   'chat.isolateSuccess': 'Running in isolated checkout',

@@ -1,4 +1,5 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -39,7 +40,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/secret') {
     res.writeHead(200, { 'content-type': 'text/plain' })
-    res.end(process.env.CRADLE_RELAYD_DEV_HMAC_SECRET || '')
+    res.end(process.env.CRADLE_RELAYD_HMAC_SECRET || '')
     return
   }
   res.writeHead(404, { 'content-type': 'text/plain' })
@@ -60,6 +61,27 @@ process.on('SIGINT', shutdown)
 async function createAppWithDataDir(dataDir: string): Promise<ElysiaApp> {
   process.env.CRADLE_DATA_DIR = dataDir
   return await createServerApp()
+}
+
+async function reserveTcpPort(): Promise<number> {
+  return await new Promise<number>((resolvePort, reject) => {
+    const server = createServer()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      server.close((error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+        if (!address || typeof address === 'string') {
+          reject(new Error('reserved address was not a TCP address'))
+          return
+        }
+        resolvePort(address.port)
+      })
+    })
+  })
 }
 
 interface RelayServerView {
@@ -97,7 +119,7 @@ describe('relay servers', () => {
     shutdownInfra()
   })
 
-  it('does not autostart managed local relayd in test or production by default', () => {
+  it('does not autostart managed local relayd in test by default, but does in production', () => {
     const previousNodeEnv = process.env.NODE_ENV
     const previousCradleEnv = process.env.CRADLE_ENV
     const previousAutostart = process.env.CRADLE_RELAYD_AUTOSTART
@@ -106,17 +128,17 @@ describe('relay servers', () => {
       delete process.env.CRADLE_RELAYD_AUTOSTART
       process.env.NODE_ENV = 'development'
       process.env.CRADLE_ENV = 'production'
-      expect(shouldStartManagedLocalRelayd()).toBe(false)
+      expect(shouldStartManagedLocalRelayd()).toBe(true)
 
       process.env.NODE_ENV = 'production'
       delete process.env.CRADLE_ENV
-      expect(shouldStartManagedLocalRelayd()).toBe(false)
+      expect(shouldStartManagedLocalRelayd()).toBe(true)
 
       process.env.NODE_ENV = 'test'
       expect(shouldStartManagedLocalRelayd()).toBe(false)
 
-      process.env.CRADLE_RELAYD_AUTOSTART = '1'
-      expect(shouldStartManagedLocalRelayd()).toBe(true)
+      process.env.CRADLE_RELAYD_AUTOSTART = '0'
+      expect(shouldStartManagedLocalRelayd()).toBe(false)
     }
     finally {
       restoreEnv('NODE_ENV', previousNodeEnv)
@@ -267,14 +289,14 @@ describe('relay servers', () => {
     const previousAutostart = process.env.CRADLE_RELAYD_AUTOSTART
     const previousRelaydPath = process.env.CRADLE_RELAYD_PATH
     const previousRelaySecret = process.env.CRADLE_RELAY_HMAC_SECRET
-    const previousRelayDevSecret = process.env.CRADLE_RELAYD_DEV_HMAC_SECRET
+    const previousRelayDevSecret = process.env.CRADLE_RELAYD_HMAC_SECRET
     let app: ElysiaApp | undefined
 
     try {
       process.env.CRADLE_RELAYD_AUTOSTART = '1'
       process.env.CRADLE_RELAYD_PATH = writeFakeRelaydExecutable(binDir)
       process.env.CRADLE_RELAY_HMAC_SECRET = 'server-managed-local-relayd-secret'
-      delete process.env.CRADLE_RELAYD_DEV_HMAC_SECRET
+      delete process.env.CRADLE_RELAYD_HMAC_SECRET
       app = await createAppWithDataDir(dataDir)
 
       await startManagedLocalRelayd()
@@ -294,7 +316,61 @@ describe('relay servers', () => {
       restoreEnv('CRADLE_RELAYD_AUTOSTART', previousAutostart)
       restoreEnv('CRADLE_RELAYD_PATH', previousRelaydPath)
       restoreEnv('CRADLE_RELAY_HMAC_SECRET', previousRelaySecret)
-      restoreEnv('CRADLE_RELAYD_DEV_HMAC_SECRET', previousRelayDevSecret)
+      restoreEnv('CRADLE_RELAYD_HMAC_SECRET', previousRelayDevSecret)
+    }
+  })
+
+  it('uses Network inbound preferences for the managed local relay URL and listener', async () => {
+    const dataDir = makeTempDir('cradle-managed-local-relayd-network-')
+    const binDir = makeTempDir('cradle-managed-local-relayd-network-bin-')
+    const relayPort = await reserveTcpPort()
+    const relayUrl = `http://127.0.0.1:${relayPort}`
+    const previousDataDir = process.env.CRADLE_DATA_DIR
+    const previousAutostart = process.env.CRADLE_RELAYD_AUTOSTART
+    const previousRelaydPath = process.env.CRADLE_RELAYD_PATH
+    const previousRelaydListen = process.env.CRADLE_RELAYD_LISTEN
+    const previousRelaydPublicUrl = process.env.CRADLE_RELAYD_PUBLIC_URL
+    let app: ElysiaApp | undefined
+
+    try {
+      process.env.CRADLE_RELAYD_AUTOSTART = '1'
+      process.env.CRADLE_RELAYD_PATH = writeFakeRelaydExecutable(binDir)
+      delete process.env.CRADLE_RELAYD_LISTEN
+      delete process.env.CRADLE_RELAYD_PUBLIC_URL
+      app = await createAppWithDataDir(dataDir)
+
+      const prefRes = await app.handle(new Request('http://localhost/preferences/network', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          proxyEnabled: true,
+          proxyMode: 'system',
+          customProxyUrl: null,
+          inbound: {
+            serverAccessMode: 'local',
+            managedRelayAccessMode: 'network',
+            managedRelayPublicUrl: relayUrl,
+          },
+        }),
+      }))
+      expect(prefRes.status).toBe(200)
+
+      await startManagedLocalRelayd()
+      const list = await (await app.handle(new Request('http://localhost/relay-servers'))).json() as RelayServerView[]
+      expect(list.find(server => server.id === 'system:local-relayd')?.relayUrl).toBe(relayUrl)
+
+      const secretRes = await fetch(`${relayUrl}/secret`)
+      expect(secretRes.status).toBe(200)
+    }
+    finally {
+      await stopManagedLocalRelayd()
+      rmSync(dataDir, { recursive: true, force: true })
+      rmSync(binDir, { recursive: true, force: true })
+      restoreEnv('CRADLE_DATA_DIR', previousDataDir)
+      restoreEnv('CRADLE_RELAYD_AUTOSTART', previousAutostart)
+      restoreEnv('CRADLE_RELAYD_PATH', previousRelaydPath)
+      restoreEnv('CRADLE_RELAYD_LISTEN', previousRelaydListen)
+      restoreEnv('CRADLE_RELAYD_PUBLIC_URL', previousRelaydPublicUrl)
     }
   })
 

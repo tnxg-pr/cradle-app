@@ -28,6 +28,12 @@ const spec = {
       "required": false,
       "target": "body.providerTargetId",
       "type": "string"
+    },
+    {
+      "name": "runInIsolation",
+      "required": false,
+      "target": "body.runInIsolation",
+      "type": "boolean"
     }
   ],
   "method": "post",

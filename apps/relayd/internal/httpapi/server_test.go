@@ -454,7 +454,7 @@ func newTestServerWithTiming(t *testing.T, heartbeatInterval time.Duration, idle
 		PublicURL:          "http://127.0.0.1:0",
 		TokenIssuer:        "cradle-server",
 		TokenAudience:      "cradle-relay",
-		DevHMACSecret:      "secret",
+		HMACSecret:         "secret",
 		PairingTTL:         time.Minute,
 		RoomTTL:            time.Minute,
 		HeartbeatInterval:  heartbeatInterval,

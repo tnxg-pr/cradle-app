@@ -88,6 +88,10 @@ export type InnerFrameKind =
  * - `pinnedPubkey`: the public key this peer expects from the other side. Sent
  *   on reconnect so a peer can refuse a key rotation it did not initiate.
  *   Empty/absent on first pairing.
+ * - `name`: optional human-readable label for this peer (e.g. the controller's
+ *   machine name), so the other side can show "paired with X" instead of just a
+ *   fingerprint. Sent in plaintext alongside the pubkey — keep it non-sensitive.
+ *   Unknown keys are stripped by Zod, so old peers ignore it (backward compatible).
  *
  * Note: the pairing `confirm` cannot ride in this frame — it is an HMAC over a
  * transcript that includes *both* public keys, which each peer only knows once
@@ -100,6 +104,7 @@ export const helloFrameSchema = z.object({
   version: z.number().int().nonnegative(),
   pubkey: z.string().min(1),
   pinnedPubkey: z.string().optional(),
+  name: z.string().max(128).optional(),
 })
 
 /**

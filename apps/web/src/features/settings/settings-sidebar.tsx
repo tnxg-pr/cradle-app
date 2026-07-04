@@ -6,6 +6,7 @@ import {
   Cursor2Line as MousePointer2Icon,
   CylinderLine as DatabaseIcon,
   Flag2Line as FlagIcon,
+  GitBranchLine as GitBranchIcon,
   HeartbeatLine as ActivityIcon,
   InformationLine as InfoIcon,
   KeyboardLine as KeyboardIcon,
@@ -124,6 +125,16 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
         ],
       },
       {
+        id: 'worktrees',
+        labelKey: 'nav.worktrees',
+        icon: GitBranchIcon,
+        searchKeys: [
+          'worktrees.cleanup.maxWorktrees.label',
+          'worktrees.cleanup.maxTotalSizeGb.label',
+          'worktrees.list.title',
+        ],
+      },
+      {
         id: 'jarvis',
         labelKey: 'nav.jarvis',
         icon: MousePointer2Icon,
@@ -179,9 +190,12 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
           'features.localAuthForDangerousActions.label',
         ],
       },
-      ...(import.meta.env.DEV
-        ? [{ id: 'remoteHosts', labelKey: 'nav.remoteHosts', icon: ServerIcon, searchKeys: ['remoteHosts.form.sshTarget' as SettingsKey, 'remoteHosts.form.displayName' as SettingsKey] } satisfies SettingsNavItem]
-        : []),
+      {
+        id: 'remoteHosts',
+        labelKey: 'nav.remoteHosts',
+        icon: ServerIcon,
+        searchKeys: ['remoteHosts.form.sshTarget' as SettingsKey, 'remoteHosts.form.displayName' as SettingsKey],
+      },
       ...(import.meta.env.DEV
         ? [{ id: 'chronicle', labelKey: 'nav.chronicle', icon: ActivityIcon } satisfies SettingsNavItem]
         : []),

@@ -53,6 +53,8 @@ export interface RelaySessionOptions {
   ourPublicKeyBase64?: string
   /** Whether this side sends `hello` on start() (controller) or waits (host). Defaults to role === 'controller'. */
   initiateHello?: boolean
+  /** Optional human-readable label sent in our `hello` so the peer can show who we are. */
+  ourName?: string
 }
 
 export interface RelaySessionCallbacks {
@@ -60,6 +62,8 @@ export interface RelaySessionCallbacks {
   send: (data: string) => void
   onReady?: () => void
   onPeerPubkey?: (peerPubkey: string, fingerprint: string) => void
+  /** Fires with the peer's reported label (from its `hello.name`) once known. */
+  onPeerInfo?: (info: { name?: string }) => void
   onStreamOpen?: (streamId: string) => void
   onStreamData?: (streamId: string, data: Uint8Array) => void
   onStreamAck?: (streamId: string, ackedBytes: number) => void
@@ -99,6 +103,7 @@ export class RelaySession {
   private readonly pinnedPeerPubkey: string | undefined
   private readonly cb: RelaySessionCallbacks
   private readonly initiateHello: boolean
+  private readonly ourName: string | undefined
 
   private state: SessionState = 'idle'
   private peerPubkey: string | null = null
@@ -134,6 +139,7 @@ export class RelaySession {
     // connects later — if the host sent hello first, relayd would close it
     // (TryAgainLater) because no controller peer is connected yet.
     this.initiateHello = options.initiateHello ?? (role === 'controller')
+    this.ourName = options.ourName
   }
 
   get isReady(): boolean {
@@ -194,6 +200,7 @@ export class RelaySession {
       version: RELAY_PROTOCOL_VERSION,
       pubkey: this.ourPublicKeyBase64,
       ...(this.pinnedPeerPubkey ? { pinnedPubkey: this.pinnedPeerPubkey } : {}),
+      ...(this.ourName ? { name: this.ourName } : {}),
     }
     helloFrameSchema.parse(frame)
     // Set helloSent BEFORE sendPlainEnvelope: sendPlainEnvelope is delivered
@@ -249,7 +256,7 @@ export class RelaySession {
     }
   }
 
-  private handleHello(frame: { kind: 'hello', version: number, pubkey: string, pinnedPubkey?: string }): void {
+  private handleHello(frame: { kind: 'hello', version: number, pubkey: string, pinnedPubkey?: string, name?: string }): void {
     if (this.peerPubkey !== null) {
       this.fail(new AppError({ code: 'relay_handshake_duplicate_hello', status: 400, message: 'Received duplicate hello frame.' }))
       return
@@ -277,6 +284,9 @@ export class RelaySession {
 
     this.peerPubkey = frame.pubkey
     this.cb.onPeerPubkey?.(frame.pubkey, peerFingerprint(frame.pubkey))
+    if (frame.name) {
+      this.cb.onPeerInfo?.({ name: frame.name })
+    }
     this.deriveKeys()
 
     // Host (reactive): send our hello now that the controller has spoken, so

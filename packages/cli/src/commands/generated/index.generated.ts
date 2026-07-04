@@ -174,6 +174,11 @@ import { register as registerRelayServerCreate } from './relay-server/create'
 import { register as registerRelayServerDelete } from './relay-server/delete'
 import { register as registerRelayServerList } from './relay-server/list'
 import { register as registerRelayServerUpdate } from './relay-server/update'
+import { register as registerRelayTransportHostEnrollmentCreate } from './relay-transport/host-enrollment/create'
+import { register as registerRelayTransportHostEnrollmentDelete } from './relay-transport/host-enrollment/delete'
+import { register as registerRelayTransportHostEnrollmentGet } from './relay-transport/host-enrollment/get'
+import { register as registerRelayTransportHostEnrollmentList } from './relay-transport/host-enrollment/list'
+import { register as registerRelayTransportHostEnrollmentPairingString } from './relay-transport/host-enrollment/pairing-string'
 import { register as registerRemoteHostCradleServerConnect } from './remote-host/cradle-server/connect'
 import { register as registerRemoteHostCradleServerDisconnect } from './remote-host/cradle-server/disconnect'
 import { register as registerRemoteHostCradleServerHealth } from './remote-host/cradle-server/health'
@@ -181,6 +186,7 @@ import { register as registerRemoteHostCradleServerWorkspaceList } from './remot
 import { register as registerRemoteHostCreate } from './remote-host/create'
 import { register as registerRemoteHostDelete } from './remote-host/delete'
 import { register as registerRemoteHostList } from './remote-host/list'
+import { register as registerRemoteHostRelayClaim } from './remote-host/relay/claim'
 import { register as registerRemoteHostUpdate } from './remote-host/update'
 import { register as registerSearchChronicle } from './search/chronicle'
 import { register as registerSearchThreads } from './search/threads'
@@ -198,6 +204,11 @@ import { register as registerSessionCreate } from './session/create'
 import { register as registerSessionDelete } from './session/delete'
 import { register as registerSessionExportMarkdown } from './session/export/markdown'
 import { register as registerSessionGet } from './session/get'
+import { register as registerSessionIsolationActivate } from './session/isolation/activate'
+import { register as registerSessionIsolationCancel } from './session/isolation/cancel'
+import { register as registerSessionIsolationLeave } from './session/isolation/leave'
+import { register as registerSessionIsolationRepair } from './session/isolation/repair'
+import { register as registerSessionIsolationStart } from './session/isolation/start'
 import { register as registerSessionLinkedIssueGet } from './session/linked-issue/get'
 import { register as registerSessionLinkedIssueLink } from './session/linked-issue/link'
 import { register as registerSessionLinkedIssueUnlink } from './session/linked-issue/unlink'
@@ -274,6 +285,9 @@ import { register as registerWorkspaceMultiFolderCreate } from './workspace/mult
 import { register as registerWorkspaceMultiFolderImport } from './workspace/multi-folder/import'
 import { register as registerWorkspaceResolve } from './workspace/resolve'
 import { register as registerWorkspaceUpdate } from './workspace/update'
+import { register as registerWorkspaceWorktreeCleanup } from './workspace/worktree/cleanup'
+import { register as registerWorkspaceWorktreeCreate } from './workspace/worktree/create'
+import { register as registerWorkspaceWorktreeList } from './workspace/worktree/list'
 
 export function registerGeneratedCommands(program: Command): void {
   registerAcpAgentCancelInstall(program)
@@ -450,6 +464,11 @@ export function registerGeneratedCommands(program: Command): void {
   registerRelayServerDelete(program)
   registerRelayServerList(program)
   registerRelayServerUpdate(program)
+  registerRelayTransportHostEnrollmentCreate(program)
+  registerRelayTransportHostEnrollmentDelete(program)
+  registerRelayTransportHostEnrollmentGet(program)
+  registerRelayTransportHostEnrollmentList(program)
+  registerRelayTransportHostEnrollmentPairingString(program)
   registerRemoteHostCradleServerConnect(program)
   registerRemoteHostCradleServerDisconnect(program)
   registerRemoteHostCradleServerHealth(program)
@@ -457,6 +476,7 @@ export function registerGeneratedCommands(program: Command): void {
   registerRemoteHostCreate(program)
   registerRemoteHostDelete(program)
   registerRemoteHostList(program)
+  registerRemoteHostRelayClaim(program)
   registerRemoteHostUpdate(program)
   registerSearchChronicle(program)
   registerSearchThreads(program)
@@ -474,6 +494,11 @@ export function registerGeneratedCommands(program: Command): void {
   registerSessionDelete(program)
   registerSessionExportMarkdown(program)
   registerSessionGet(program)
+  registerSessionIsolationActivate(program)
+  registerSessionIsolationCancel(program)
+  registerSessionIsolationLeave(program)
+  registerSessionIsolationRepair(program)
+  registerSessionIsolationStart(program)
   registerSessionLinkedIssueGet(program)
   registerSessionLinkedIssueLink(program)
   registerSessionLinkedIssueUnlink(program)
@@ -550,4 +575,7 @@ export function registerGeneratedCommands(program: Command): void {
   registerWorkspaceMultiFolderImport(program)
   registerWorkspaceResolve(program)
   registerWorkspaceUpdate(program)
+  registerWorkspaceWorktreeCleanup(program)
+  registerWorkspaceWorktreeCreate(program)
+  registerWorkspaceWorktreeList(program)
 }

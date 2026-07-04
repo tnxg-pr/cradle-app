@@ -65,6 +65,8 @@
   "session.action.showLess": "Mostrar menos",
   "session.action.unpin": "Desfijar",
   "session.aria.error": "Error de sesión",
+  "session.aria.isolated": "Ejecutándose en worktree",
+  "session.aria.isolatedBranch": "Ejecutándose en worktree ({{branch}})",
   "session.aria.menu": "Menú de sesión",
   "session.aria.newReply": "Nueva respuesta",
   "session.aria.pinned": "Fijado",

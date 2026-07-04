@@ -71,6 +71,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "dockview-react": "^7.0.2",
     "embla-carousel-react": "^8.6.0",
     "es-module-shims": "^2.8.1",
     "es-toolkit": "^1.47.0",

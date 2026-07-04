@@ -33,6 +33,10 @@ const networkProxySource = t.Union([
   t.Literal('custom'),
   t.Literal('environment'),
 ], { default: 'none' })
+const inboundAccessMode = t.Union([
+  t.Literal('local'),
+  t.Literal('network'),
+], { default: 'local' })
 const titleGenerationPreferences = t.Object({
   providerTargetId: nullableString,
   modelId: nullableString,
@@ -48,6 +52,10 @@ export const PreferencesModel = {
       blockCodexAppServerLogInserts: t.Optional(t.Boolean({ default: false })),
       nativeProviderSkillProjection: t.Optional(t.Boolean({ default: false })),
     }, { additionalProperties: false }),
+    worktreeCleanup: t.Optional(t.Object({
+      maxWorktrees: t.Number({ default: 25, minimum: 0 }),
+      maxTotalSizeGb: t.Number({ default: 50, minimum: 0 }),
+    }, { additionalProperties: false })),
   }, { additionalProperties: false }),
   chatPreferences: t.Object({
     modelId: nullableString,
@@ -83,6 +91,11 @@ export const PreferencesModel = {
     proxyEnabled: t.Boolean({ default: true }),
     proxyMode: networkProxyMode,
     customProxyUrl: nullableString,
+    inbound: t.Optional(t.Object({
+      serverAccessMode: inboundAccessMode,
+      managedRelayAccessMode: inboundAccessMode,
+      managedRelayPublicUrl: nullableString,
+    }, { additionalProperties: false })),
   }, { additionalProperties: false }),
   networkProxyStatus: t.Object({
     enabled: t.Boolean(),
@@ -153,6 +166,13 @@ export const AppPreferencesJsonSchema = z.union([
     blockCodexAppServerLogInserts: false,
     nativeProviderSkillProjection: false,
   }),
+  worktreeCleanup: z.object({
+    maxWorktrees: z.number().min(0).default(25),
+    maxTotalSizeGb: z.number().min(0).default(50),
+  }).default({
+    maxWorktrees: 25,
+    maxTotalSizeGb: 50,
+  }),
 }).default({
   featureFlags: {
     multiWorkspacePoc: false,
@@ -160,6 +180,10 @@ export const AppPreferencesJsonSchema = z.union([
     continueBlockedCodexGoals: false,
     blockCodexAppServerLogInserts: false,
     nativeProviderSkillProjection: false,
+  },
+  worktreeCleanup: {
+    maxWorktrees: 25,
+    maxTotalSizeGb: 50,
   },
 }))
 
@@ -200,10 +224,24 @@ export const NetworkPreferencesJsonSchema = z.union([
   proxyEnabled: z.boolean().default(true),
   proxyMode: z.enum(['system', 'custom', 'environment']).default('system'),
   customProxyUrl: z.string().trim().transform(value => value.length > 0 ? value : null).nullable().default(null),
+  inbound: z.object({
+    serverAccessMode: z.enum(['local', 'network']).default('local'),
+    managedRelayAccessMode: z.enum(['local', 'network']).default('local'),
+    managedRelayPublicUrl: z.string().trim().transform(value => value.length > 0 ? value : null).nullable().default(null),
+  }).default({
+    serverAccessMode: 'local',
+    managedRelayAccessMode: 'local',
+    managedRelayPublicUrl: null,
+  }),
 }).default({
   proxyEnabled: true,
   proxyMode: 'system',
   customProxyUrl: null,
+  inbound: {
+    serverAccessMode: 'local',
+    managedRelayAccessMode: 'local',
+    managedRelayPublicUrl: null,
+  },
 }))
 
 export const JarvisPreferencesJsonSchema = z.union([

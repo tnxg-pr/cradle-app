@@ -65,6 +65,8 @@
   "session.action.showLess": "收起",
   "session.action.unpin": "取消置顶",
   "session.aria.error": "会话出错",
+  "session.aria.isolated": "在 worktree 中运行",
+  "session.aria.isolatedBranch": "在 worktree 中运行 ({{branch}})",
   "session.aria.menu": "会话菜单",
   "session.aria.newReply": "新回复",
   "session.aria.pinned": "已置顶",

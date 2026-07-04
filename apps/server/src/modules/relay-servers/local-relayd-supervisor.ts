@@ -9,12 +9,14 @@ import { eq } from 'drizzle-orm'
 
 import { db } from '../../infra'
 import { createChildLogger } from '../../logging/logger'
+import { getNetworkPreferencesSync } from '../preferences/service'
 import { relayTokenSecret } from './relay-token-service'
 import { readDefaultRelayServer } from './service'
 
 const localRelayServerId = 'system:local-relayd'
 const localRelayDisplayName = 'Built-in local relay'
 const defaultRelayHost = '127.0.0.1'
+const networkRelayHost = '0.0.0.0'
 const relaydExecutableName = process.platform === 'win32' ? 'relayd.exe' : 'relayd'
 const localModuleDir = dirname(fileURLToPath(import.meta.url))
 const logger = createChildLogger({ module: 'local-relayd-supervisor' })
@@ -22,6 +24,13 @@ const logger = createChildLogger({ module: 'local-relayd-supervisor' })
 interface RunningLocalRelayd {
   child: ChildProcess
   relayUrl: string
+}
+
+type InboundAccessMode = 'local' | 'network'
+
+const defaultInboundRelayConfig = {
+  managedRelayAccessMode: 'local' as const,
+  managedRelayPublicUrl: null,
 }
 
 let runningLocalRelayd: RunningLocalRelayd | null = null
@@ -34,7 +43,7 @@ export function shouldStartManagedLocalRelayd(): boolean {
   if (configured === '1' || configured === 'true' || configured === 'yes') {
     return true
   }
-  return !isTestOrProductionEnvironment()
+  return !isTestEnvironment()
 }
 
 export async function startManagedLocalRelayd(): Promise<void> {
@@ -48,8 +57,13 @@ export async function startManagedLocalRelayd(): Promise<void> {
     return
   }
 
-  const listenAddr = process.env.CRADLE_RELAYD_LISTEN?.trim() || await allocateLocalListenAddr()
-  const relayUrl = process.env.CRADLE_RELAYD_PUBLIC_URL?.trim() || `http://${listenAddr}`
+  const networkConfig = resolveManagedLocalRelaydNetworkConfig()
+  const listenAddr = process.env.CRADLE_RELAYD_LISTEN?.trim()
+    || await resolveManagedLocalRelaydListenAddr(networkConfig)
+  const localReadyUrl = localReadyUrlForListenAddr(listenAddr)
+  const relayUrl = process.env.CRADLE_RELAYD_PUBLIC_URL?.trim()
+    || networkConfig.publicUrl
+    || localReadyUrl
   let hmacSecret: string
   try {
     hmacSecret = relayTokenSecret()
@@ -64,7 +78,7 @@ export async function startManagedLocalRelayd(): Promise<void> {
       ...process.env,
       CRADLE_RELAYD_LISTEN: listenAddr,
       CRADLE_RELAYD_PUBLIC_URL: relayUrl,
-      CRADLE_RELAYD_DEV_HMAC_SECRET: hmacSecret,
+      CRADLE_RELAYD_HMAC_SECRET: hmacSecret,
     },
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -87,7 +101,7 @@ export async function startManagedLocalRelayd(): Promise<void> {
   })
 
   try {
-    await waitForReady(relayUrl)
+    await waitForReady(localReadyUrl)
     upsertManagedLocalRelayServer(relayUrl)
     logger.info('managed local relayd started', { relayUrl, pid: child.pid ?? null })
   }
@@ -104,6 +118,59 @@ export async function stopManagedLocalRelayd(): Promise<void> {
   }
   runningLocalRelayd = null
   await terminateChild(running.child)
+}
+
+function resolveManagedLocalRelaydNetworkConfig(): { accessMode: InboundAccessMode, publicUrl: string | null } {
+  try {
+    const inbound = getNetworkPreferencesSync().inbound ?? defaultInboundRelayConfig
+    return {
+      accessMode: inbound.managedRelayAccessMode,
+      publicUrl: inbound.managedRelayPublicUrl,
+    }
+  }
+  catch (error) {
+    logger.warn('failed to read managed local relayd network preferences; using local-only defaults', { err: error })
+    return { accessMode: 'local', publicUrl: null }
+  }
+}
+
+async function resolveManagedLocalRelaydListenAddr(config: { accessMode: InboundAccessMode, publicUrl: string | null }): Promise<string> {
+  const host = config.accessMode === 'network' ? networkRelayHost : defaultRelayHost
+  const portFromPublicUrl = config.accessMode === 'network' && config.publicUrl
+    ? listenPortFromPublicUrl(config.publicUrl)
+    : null
+  if (portFromPublicUrl !== null) {
+    return `${host}:${portFromPublicUrl}`
+  }
+  return await allocateListenAddr(host)
+}
+
+function listenPortFromPublicUrl(publicUrl: string): number | null {
+  try {
+    const url = new URL(publicUrl)
+    if (url.port) {
+      return Number.parseInt(url.port, 10)
+    }
+    return null
+  }
+  catch {
+    return null
+  }
+}
+
+function localReadyUrlForListenAddr(listenAddr: string): string {
+  const port = listenPortFromListenAddr(listenAddr)
+  const host = listenAddr.startsWith(`${networkRelayHost}:`) ? defaultRelayHost : listenAddr.slice(0, listenAddr.lastIndexOf(':'))
+  return `http://${host || defaultRelayHost}:${port}`
+}
+
+function listenPortFromListenAddr(listenAddr: string): number {
+  const separator = listenAddr.lastIndexOf(':')
+  const port = separator >= 0 ? Number.parseInt(listenAddr.slice(separator + 1), 10) : Number.NaN
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`Managed relayd listen address must include a positive port: ${listenAddr}`)
+  }
+  return port
 }
 
 function upsertManagedLocalRelayServer(relayUrl: string): void {
@@ -183,11 +250,11 @@ function resolveRelaydSourceDir(): string | null {
   return null
 }
 
-async function allocateLocalListenAddr(): Promise<string> {
+async function allocateListenAddr(host: string): Promise<string> {
   const port = await new Promise<number>((resolvePort, reject) => {
     const server = createServer()
     server.once('error', reject)
-    server.listen(0, defaultRelayHost, () => {
+    server.listen(0, host, () => {
       const address = server.address()
       server.close((error) => {
         if (error) {
@@ -202,7 +269,7 @@ async function allocateLocalListenAddr(): Promise<string> {
       })
     })
   })
-  return `${defaultRelayHost}:${port}`
+  return `${host}:${port}`
 }
 
 async function waitForReady(relayUrl: string): Promise<void> {
@@ -260,10 +327,10 @@ function signalChild(child: ChildProcess, signal: NodeJS.Signals): void {
   child.kill(signal)
 }
 
-function isTestOrProductionEnvironment(): boolean {
+function isTestEnvironment(): boolean {
   const nodeEnv = process.env.NODE_ENV?.toLowerCase()
   const cradleEnv = process.env.CRADLE_ENV?.toLowerCase()
-  return nodeEnv === 'test' || nodeEnv === 'production' || cradleEnv === 'test' || cradleEnv === 'production'
+  return nodeEnv === 'test' || cradleEnv === 'test'
 }
 
 function ensureTrailingSlash(value: string): URL {

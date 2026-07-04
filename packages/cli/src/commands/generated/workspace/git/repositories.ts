@@ -19,7 +19,20 @@ const spec = {
     "repositories"
   ],
   "description": "Get git repositories",
-  "flags": [],
+  "flags": [
+    {
+      "name": "repo",
+      "required": false,
+      "target": "query.repo",
+      "type": "string"
+    },
+    {
+      "name": "sessionId",
+      "required": false,
+      "target": "query.sessionId",
+      "type": "string"
+    }
+  ],
   "method": "get",
   "path": "/workspaces/{workspaceId}/git/repositories"
 } satisfies CliOperationSpec

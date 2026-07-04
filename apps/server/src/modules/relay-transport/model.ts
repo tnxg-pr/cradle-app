@@ -7,6 +7,13 @@ const enrollmentStatus = t.Union([
   t.Literal('offline'),
 ])
 
+const hostEnrollmentLive = t.Object({
+  connected: t.Boolean(),
+  controllerName: nullableString,
+  lastReadyAt: t.Union([t.Number(), t.Null()]),
+  activeStreams: t.Number(),
+}, { additionalProperties: false })
+
 const hostEnrollment = t.Object({
   id: t.String(),
   displayName: t.String(),
@@ -20,6 +27,7 @@ const hostEnrollment = t.Object({
   lastError: nullableString,
   createdAt: t.Number(),
   updatedAt: t.Number(),
+  live: t.Union([hostEnrollmentLive, t.Null()]),
 }, { additionalProperties: false })
 
 export const RelayHostEnrollmentModel = {

@@ -25,6 +25,12 @@ const spec = {
       "required": false,
       "target": "query.repo",
       "type": "string"
+    },
+    {
+      "name": "sessionId",
+      "required": false,
+      "target": "query.sessionId",
+      "type": "string"
     }
   ],
   "method": "get",

@@ -73,6 +73,18 @@ const spec = {
       ]
     },
     {
+      "name": "linkedIssueId",
+      "required": false,
+      "target": "body.linkedIssueId",
+      "type": "string"
+    },
+    {
+      "name": "worktreeId",
+      "required": false,
+      "target": "body.worktreeId",
+      "type": "string"
+    },
+    {
       "name": "id",
       "required": false,
       "target": "body.id",

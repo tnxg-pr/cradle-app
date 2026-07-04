@@ -37,6 +37,8 @@ export interface RelayControllerTransportOptions {
   pairingCode?: string
   /** Pinned host public key for reconnect. */
   pinnedHostPubkey?: string
+  /** Optional label sent in `hello` so the host can show who paired with it. */
+  controllerName?: string
   readyTimeoutMs?: number
 }
 
@@ -159,6 +161,7 @@ class ControllerTransport {
           ourPublicKeyBase64: this.keypair.publicKeyBase64,
           ...(this.options.pairingCode ? { pairingCode: this.options.pairingCode } : {}),
           ...(this.options.pinnedHostPubkey ? { pinnedPeerPubkey: this.options.pinnedHostPubkey } : {}),
+          ...(this.options.controllerName ? { ourName: this.options.controllerName } : {}),
         },
         {
           send: (data) => {

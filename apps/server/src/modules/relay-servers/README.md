@@ -17,8 +17,8 @@ process that both Cradle Servers use.
 
 ## Built-in Local Relayd
 
-`local-relayd-supervisor.ts` owns the local development relayd process launched by Cradle Server.
-It is a local convenience for desktop/dev use:
+`local-relayd-supervisor.ts` owns the local relayd process launched by Cradle Server.
+It is a convenience for desktop/dev use:
 
 - `CRADLE_RELAYD_AUTOSTART=0|false|no` disables it.
 - `CRADLE_RELAYD_AUTOSTART=1|true|yes` forces it on.
@@ -31,12 +31,17 @@ When the managed relayd is ready, the supervisor upserts the system row
 `system:local-relayd` with display name `Built-in local relay`. It becomes default only when no
 explicit default exists, so user-selected public relay servers remain authoritative.
 
+Desktop users configure whether this managed relay only listens on localhost or accepts
+connections from other devices through Settings > Network > Inbound access. The setting is stored
+in `preferences/network.json` and is read on the next Cradle restart. Environment variables still
+override this for development/deployment:
+
+- `CRADLE_RELAYD_LISTEN` sets the child relayd listen address directly.
+- `CRADLE_RELAYD_PUBLIC_URL` sets the relay URL advertised into the `system:local-relayd` row.
+
 The supervisor injects Cradle Server's resolved relay HMAC secret into the relayd child process via
 `CRADLE_RELAYD_DEV_HMAC_SECRET`, so the managed relay always validates the tokens minted by the same
 server process.
-
-The built-in local relay URL is loopback-only. Real remote machines still need a relay URL reachable
-from both sides.
 
 The built-in HMAC secret fallback is non-production only. Production deployments must set
 `CRADLE_RELAY_HMAC_SECRET` on Cradle Server and `CRADLE_RELAYD_DEV_HMAC_SECRET` (or

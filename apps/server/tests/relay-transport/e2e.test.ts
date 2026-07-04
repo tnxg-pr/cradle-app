@@ -69,7 +69,7 @@ async function spawnRelayd(): Promise<RelaydHandle> {
       ...process.env,
       CRADLE_RELAYD_LISTEN: listenAddr,
       CRADLE_RELAYD_PUBLIC_URL: relayUrl,
-      CRADLE_RELAYD_DEV_HMAC_SECRET: TEST_HMAC_SECRET,
+      CRADLE_RELAYD_HMAC_SECRET: TEST_HMAC_SECRET,
       CRADLE_RELAYD_ROOM_TTL: '30s',
     },
     stdio: ['ignore', 'pipe', 'pipe'],

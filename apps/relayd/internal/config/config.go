@@ -7,7 +7,7 @@ import (
 )
 
 // DefaultDevHMACSecret is the built-in HMAC secret used when no
-// CRADLE_RELAYD_DEV_HMAC_SECRET / CRADLE_RELAY_HMAC_SECRET is configured.
+// CRADLE_RELAYD_HMAC_SECRET / CRADLE_RELAY_HMAC_SECRET is configured.
 //
 // It is a publicly known, dev-only value: it lets `go run ./cmd/relayd` start
 // with zero configuration and lets Cradle Server validate relay tokens out of
@@ -22,10 +22,10 @@ type Config struct {
 	PublicURL          string
 	TokenIssuer        string
 	TokenAudience      string
-	DevHMACSecret      string
-	// DevHMACSecretResolved is true when DevHMACSecret came from the built-in
+	HMACSecret      string
+	// HMACSecretResolved is true when HMACSecret came from the built-in
 	// dev default rather than an explicit env/flag. Lets the entrypoint warn.
-	DevHMACSecretResolved bool
+	HMACSecretResolved bool
 	PairingTTL            time.Duration
 	RoomTTL               time.Duration
 	HeartbeatInterval     time.Duration
@@ -53,8 +53,8 @@ func (c Config) Validate() error {
 	if c.TokenAudience == "" {
 		return errors.New("token audience is required")
 	}
-	if c.DevHMACSecret == "" {
-		return errors.New("development HMAC secret is required")
+	if c.HMACSecret == "" {
+		return errors.New("HMAC secret is required")
 	}
 	if c.PairingTTL <= 0 {
 		return fmt.Errorf("pairing ttl must be positive")

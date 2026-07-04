@@ -33,6 +33,22 @@ export interface HostConnectorConfig {
   localServerPort: number
 }
 
+/**
+ * In-memory snapshot of a host enrollment's live connection state. Not persisted
+ * — re-learned from the controller's `hello` on each reconnect, so it's null
+ * until the first handshake after a Cradle Server restart.
+ */
+export interface HostEnrollmentLiveState {
+  /** True when the E2E session is currently ready (controller connected right now). */
+  connected: boolean
+  /** Controller label learned from its `hello.name`, or null if not yet known. */
+  controllerName: string | null
+  /** Unix ms of the most recent successful handshake, or null if never. */
+  lastReadyAt: number | null
+  /** Currently open tunneled streams (a controller with active traffic has ≥1). */
+  activeStreams: number
+}
+
 interface ActiveStream {
   socket: net.Socket
   streamId: string
@@ -46,6 +62,10 @@ class HostConnection {
   private reconnectTimer: NodeJS.Timeout | null = null
   private backoffMs = 1_000
   private readonly maxBackoffMs = 30_000
+  /** Unix ms of the most recent `onReady` (controller connected + handshake done). */
+  private lastReadyAt: number | null = null
+  /** Controller label learned from its `hello.name`. Cleared on teardown. */
+  private controllerName: string | null = null
 
   constructor(
     private readonly enrollmentId: string,
@@ -67,6 +87,16 @@ class HostConnection {
       this.reconnectTimer = null
     }
     void this.teardown()
+  }
+
+  /** Snapshot of the in-memory connection state for UI surfacing. */
+  getLiveState(): HostEnrollmentLiveState {
+    return {
+      connected: this.session?.isReady ?? false,
+      controllerName: this.controllerName,
+      lastReadyAt: this.lastReadyAt,
+      activeStreams: this.streams.size,
+    }
   }
 
   private async loop(): Promise<void> {
@@ -184,6 +214,7 @@ class HostConnection {
             ws.on('close', () => drop(new Error('relayd closed the host websocket')))
             ws.on('error', () => drop(new Error('relayd host websocket error')))
             this.backoffMs = 1_000 // reset backoff after a clean ready
+            this.lastReadyAt = Date.now()
             if (!enrollment.pinnedControllerPubkey && learnedControllerPubkey) {
               this.onPaired(learnedControllerPubkey)
             }
@@ -192,6 +223,11 @@ class HostConnection {
           onPeerPubkey: (controllerPubkey) => {
             if (!enrollment.pinnedControllerPubkey) {
               learnedControllerPubkey = controllerPubkey
+            }
+          },
+          onPeerInfo: (info) => {
+            if (info.name) {
+              this.controllerName = info.name
             }
           },
           onStreamOpen: (streamId) => this.openLocalStream(streamId),
@@ -366,6 +402,11 @@ export class HostConnectorService {
   restartForEnrollment(enrollmentId: string): void {
     this.stopForEnrollment(enrollmentId)
     this.startForEnrollment(enrollmentId)
+  }
+
+  /** Live in-memory state for an enrollment, or null if no connector is running for it. */
+  getLiveState(enrollmentId: string): HostEnrollmentLiveState | null {
+    return this.connections.get(enrollmentId)?.getLiveState() ?? null
   }
 }
 

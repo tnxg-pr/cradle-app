@@ -18,7 +18,7 @@
   "chrome.confirm": "确认",
   "chrome.errorTitle": "隔离操作失败",
   "chrome.openSession": "打开会话 {{id}}",
-  "chat.isolate": "隔离",
+  "chat.isolate": "Worktree",
   "chat.isolatePending": "隔离待生效",
   "chat.isolateTooltip": "在隔离 git worktree 中运行",
   "chat.isolateSuccess": "已在隔离环境中运行",

@@ -57,6 +57,10 @@ export type GetPreferencesAppResponses = {
             blockCodexAppServerLogInserts?: boolean;
             nativeProviderSkillProjection?: boolean;
         };
+        worktreeCleanup?: {
+            maxWorktrees: number;
+            maxTotalSizeGb: number;
+        };
     };
 };
 
@@ -70,6 +74,10 @@ export type PutPreferencesAppData = {
             continueBlockedCodexGoals?: boolean;
             blockCodexAppServerLogInserts?: boolean;
             nativeProviderSkillProjection?: boolean;
+        };
+        worktreeCleanup?: {
+            maxWorktrees: number;
+            maxTotalSizeGb: number;
         };
     };
     path?: never;
@@ -247,6 +255,11 @@ export type GetPreferencesNetworkResponses = {
         proxyEnabled: boolean;
         proxyMode: 'system' | 'custom' | 'environment';
         customProxyUrl: string | null;
+        inbound?: {
+            serverAccessMode: 'local' | 'network';
+            managedRelayAccessMode: 'local' | 'network';
+            managedRelayPublicUrl: string | null;
+        };
     };
 };
 
@@ -257,6 +270,11 @@ export type PutPreferencesNetworkData = {
         proxyEnabled: boolean;
         proxyMode: 'system' | 'custom' | 'environment';
         customProxyUrl: string | null;
+        inbound?: {
+            serverAccessMode: 'local' | 'network';
+            managedRelayAccessMode: 'local' | 'network';
+            managedRelayPublicUrl: string | null;
+        };
     };
     path?: never;
     query?: never;
@@ -2272,6 +2290,161 @@ export type PatchRelayServersByRelayServerIdResponses = {
 
 export type PatchRelayServersByRelayServerIdResponse = PatchRelayServersByRelayServerIdResponses[keyof PatchRelayServersByRelayServerIdResponses];
 
+export type GetRelayTransportHostEnrollmentsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/relay-transport/host-enrollments';
+};
+
+export type GetRelayTransportHostEnrollmentsResponses = {
+    /**
+     * Response for status 200
+     */
+    200: Array<{
+        id: string;
+        displayName: string;
+        relayUrl: string;
+        roomId: string;
+        hostPubkey: string;
+        hostKeyFingerprint: string;
+        pinnedControllerPubkey: string | null;
+        status: 'pending' | 'paired' | 'offline';
+        pairingCode: string | null;
+        lastError: string | null;
+        createdAt: number;
+        updatedAt: number;
+        live: {
+            connected: boolean;
+            controllerName: string | null;
+            lastReadyAt: number | null;
+            activeStreams: number;
+        } | null;
+    }>;
+};
+
+export type GetRelayTransportHostEnrollmentsResponse = GetRelayTransportHostEnrollmentsResponses[keyof GetRelayTransportHostEnrollmentsResponses];
+
+export type PostRelayTransportHostEnrollmentsData = {
+    body: {
+        id?: string;
+        displayName: string;
+        relayUrl: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/relay-transport/host-enrollments';
+};
+
+export type PostRelayTransportHostEnrollmentsResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        id: string;
+        displayName: string;
+        relayUrl: string;
+        roomId: string;
+        hostPubkey: string;
+        hostKeyFingerprint: string;
+        pinnedControllerPubkey: string | null;
+        status: 'pending' | 'paired' | 'offline';
+        pairingCode: string | null;
+        lastError: string | null;
+        createdAt: number;
+        updatedAt: number;
+        live: {
+            connected: boolean;
+            controllerName: string | null;
+            lastReadyAt: number | null;
+            activeStreams: number;
+        } | null;
+        pairingString: string;
+        pairingCodeExpiresAt: string | null;
+    };
+};
+
+export type PostRelayTransportHostEnrollmentsResponse = PostRelayTransportHostEnrollmentsResponses[keyof PostRelayTransportHostEnrollmentsResponses];
+
+export type DeleteRelayTransportHostEnrollmentsByEnrollmentIdData = {
+    body?: never;
+    path: {
+        enrollmentId: string;
+    };
+    query?: never;
+    url: '/relay-transport/host-enrollments/{enrollmentId}';
+};
+
+export type DeleteRelayTransportHostEnrollmentsByEnrollmentIdResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        ok: boolean;
+    };
+};
+
+export type DeleteRelayTransportHostEnrollmentsByEnrollmentIdResponse = DeleteRelayTransportHostEnrollmentsByEnrollmentIdResponses[keyof DeleteRelayTransportHostEnrollmentsByEnrollmentIdResponses];
+
+export type GetRelayTransportHostEnrollmentsByEnrollmentIdData = {
+    body?: never;
+    path: {
+        enrollmentId: string;
+    };
+    query?: never;
+    url: '/relay-transport/host-enrollments/{enrollmentId}';
+};
+
+export type GetRelayTransportHostEnrollmentsByEnrollmentIdResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        id: string;
+        displayName: string;
+        relayUrl: string;
+        roomId: string;
+        hostPubkey: string;
+        hostKeyFingerprint: string;
+        pinnedControllerPubkey: string | null;
+        status: 'pending' | 'paired' | 'offline';
+        pairingCode: string | null;
+        lastError: string | null;
+        createdAt: number;
+        updatedAt: number;
+        live: {
+            connected: boolean;
+            controllerName: string | null;
+            lastReadyAt: number | null;
+            activeStreams: number;
+        } | null;
+    };
+};
+
+export type GetRelayTransportHostEnrollmentsByEnrollmentIdResponse = GetRelayTransportHostEnrollmentsByEnrollmentIdResponses[keyof GetRelayTransportHostEnrollmentsByEnrollmentIdResponses];
+
+export type GetRelayTransportHostEnrollmentsByEnrollmentIdPairingStringData = {
+    body?: never;
+    path: {
+        enrollmentId: string;
+    };
+    query?: never;
+    url: '/relay-transport/host-enrollments/{enrollmentId}/pairing-string';
+};
+
+export type GetRelayTransportHostEnrollmentsByEnrollmentIdPairingStringResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        pairingString: string;
+        pairingCode: string;
+        hostKeyFingerprint: string;
+    };
+};
+
+export type GetRelayTransportHostEnrollmentsByEnrollmentIdPairingStringResponse = GetRelayTransportHostEnrollmentsByEnrollmentIdPairingStringResponses[keyof GetRelayTransportHostEnrollmentsByEnrollmentIdPairingStringResponses];
+
 export type GetRemoteHostsData = {
     body?: never;
     path?: never;
@@ -2305,7 +2478,7 @@ export type PostRemoteHostsData = {
         displayName: string;
         enabled?: boolean;
         connectionConfig?: {
-            transport?: 'ssh' | 'direct-url';
+            transport?: 'ssh' | 'direct-url' | 'relay';
             baseUrl?: string;
             ssh?: {
                 hostName: string;
@@ -2317,6 +2490,13 @@ export type PostRemoteHostsData = {
             sshExecutable?: string;
             sshArgs?: Array<string>;
             connectTimeoutMs?: string | number;
+            relay?: {
+                relayServerId?: string | null;
+                relayUrl?: string | null;
+                roomId?: string | null;
+                pinnedHostPubkey?: string | null;
+                controllerKeyRef?: string | null;
+            };
         };
         capabilities?: {
             cradleServer?: {
@@ -2376,7 +2556,7 @@ export type PatchRemoteHostsByHostIdData = {
         displayName?: string;
         enabled?: boolean;
         connectionConfig?: {
-            transport?: 'ssh' | 'direct-url';
+            transport?: 'ssh' | 'direct-url' | 'relay';
             baseUrl?: string;
             ssh?: {
                 hostName: string;
@@ -2388,6 +2568,13 @@ export type PatchRemoteHostsByHostIdData = {
             sshExecutable?: string;
             sshArgs?: Array<string>;
             connectTimeoutMs?: string | number;
+            relay?: {
+                relayServerId?: string | null;
+                relayUrl?: string | null;
+                roomId?: string | null;
+                pinnedHostPubkey?: string | null;
+                controllerKeyRef?: string | null;
+            };
         };
         capabilities?: {
             cradleServer?: {
@@ -2552,6 +2739,31 @@ export type PostRemoteHostsByHostIdCradleServerTestResponses = {
 };
 
 export type PostRemoteHostsByHostIdCradleServerTestResponse = PostRemoteHostsByHostIdCradleServerTestResponses[keyof PostRemoteHostsByHostIdCradleServerTestResponses];
+
+export type PostRemoteHostsByHostIdRelayClaimData = {
+    body: {
+        pairingString: string;
+    };
+    path: {
+        hostId: string;
+    };
+    query?: never;
+    url: '/remote-hosts/{hostId}/relay/claim';
+};
+
+export type PostRemoteHostsByHostIdRelayClaimResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        hostId: string;
+        state: 'idle' | 'connected' | 'offline';
+        localBaseUrl: string | null;
+        lastError: string | null;
+    };
+};
+
+export type PostRemoteHostsByHostIdRelayClaimResponse = PostRemoteHostsByHostIdRelayClaimResponses[keyof PostRemoteHostsByHostIdRelayClaimResponses];
 
 export type GetRemoteHostsByHostIdCradleServerWorkspacesData = {
     body?: never;
@@ -8588,6 +8800,76 @@ export type GetWorkspacesByWorkspaceIdGitBranchCompareResponses = {
 };
 
 export type GetWorkspacesByWorkspaceIdGitBranchCompareResponse = GetWorkspacesByWorkspaceIdGitBranchCompareResponses[keyof GetWorkspacesByWorkspaceIdGitBranchCompareResponses];
+
+export type GetWorktreesManagedData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/worktrees/managed';
+};
+
+export type GetWorktreesManagedResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        worktrees: Array<{
+            id: string;
+            sourceWorkspaceId: string;
+            workspaceName: string;
+            name: string;
+            path: string;
+            branch: string;
+            baseRef: string;
+            status: 'active' | 'merged' | 'abandoned';
+            createdBySessionId: string | null;
+            createdAt: number;
+            updatedAt: number;
+            sizeBytes: number;
+            sessionCount: number;
+        }>;
+        totalSizeBytes: number;
+    };
+};
+
+export type GetWorktreesManagedResponse = GetWorktreesManagedResponses[keyof GetWorktreesManagedResponses];
+
+export type PostWorktreesCleanupData = {
+    body: {
+        maxWorktrees: number;
+        maxTotalSizeGb: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/worktrees/cleanup';
+};
+
+export type PostWorktreesCleanupResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        cleaned: Array<{
+            id: string;
+            sourceWorkspaceId: string;
+            workspaceName: string;
+            name: string;
+            path: string;
+            branch: string;
+            baseRef: string;
+            status: 'active' | 'merged' | 'abandoned';
+            createdBySessionId: string | null;
+            createdAt: number;
+            updatedAt: number;
+            sizeBytes: number;
+            sessionCount: number;
+        }>;
+        skipped: number;
+        totalSizeBytes: number;
+    };
+};
+
+export type PostWorktreesCleanupResponse = PostWorktreesCleanupResponses[keyof PostWorktreesCleanupResponses];
 
 export type GetWorkspacesByWorkspaceIdWorktreesData = {
     body?: never;

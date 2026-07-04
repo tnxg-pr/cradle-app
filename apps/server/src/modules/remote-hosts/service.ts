@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { hostname } from 'node:os'
 
 import type { RemoteHost } from '@cradle/db'
 import { remoteHosts } from '@cradle/db'
@@ -613,6 +614,7 @@ export async function claimRemoteHostRelay(
     controllerPrivateKeyBase64,
     controllerPublicKeyBase64,
     pairingCode,
+    controllerName: hostname(),
     readyTimeoutMs: connectionConfig.connectTimeoutMs ?? 15_000,
   })
 
@@ -701,6 +703,7 @@ async function startRelayControllerTunnel(
     controllerPrivateKeyBase64: controllerPrivateKey,
     controllerPublicKeyBase64: controllerPublicKey,
     pinnedHostPubkey: relay.pinnedHostPubkey,
+    controllerName: hostname(),
     readyTimeoutMs: connectionConfig.connectTimeoutMs ?? 15_000,
   }) as RemoteCradleServerTunnelHandle
 }

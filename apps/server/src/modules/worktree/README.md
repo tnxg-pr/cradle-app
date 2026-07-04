@@ -6,7 +6,7 @@ Cradle-owned session isolation via git worktrees. Worktrees are backend plumbing
 
 ## Files
 
-- `index.ts`: workspace-scoped worktree lifecycle routes
+- `index.ts`: global managed worktree settings routes and workspace-scoped worktree lifecycle routes
 - `model.ts`: TypeBox schemas
 - `service.ts`: create/bind/cleanup, execution root resolution, issue isolation context
 
@@ -17,3 +17,5 @@ Session isolation routes live in `modules/session/index.ts`. Issue isolation con
 - `GET /workspaces/:workspaceId/worktrees`
 - `POST /workspaces/:workspaceId/worktrees`
 - `POST /workspaces/:workspaceId/worktrees/:worktreeId/cleanup`
+- `GET /worktrees/managed`
+- `POST /worktrees/cleanup`

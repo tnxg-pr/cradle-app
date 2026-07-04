@@ -43,7 +43,7 @@ const managedRelayHMACSecretLabel = 'Remote relay HMAC signing key'
  * (see `internal/config/config.go` DefaultDevHMACSecret), so a fresh local
  * Cradle Server and a bare `go run ./cmd/relayd` agree on the secret with zero
  * configuration. It is publicly known and insecure; production must set
- * CRADLE_RELAY_HMAC_SECRET on the server (and CRADLE_RELAYD_DEV_HMAC_SECRET on
+ * CRADLE_RELAY_HMAC_SECRET on the server (and CRADLE_RELAYD_HMAC_SECRET on
  * the relay). Keep this string in sync with the relayd constant.
  */
 const defaultDevRelayHMACSecret = 'cradle-dev-relay-insecure-secret-do-not-use-in-production'
@@ -80,7 +80,7 @@ export function mintRelayToken(input: MintRelayTokenInput): MintedRelayToken {
 
 export function relayTokenSecret(): string {
   const secret = process.env.CRADLE_RELAY_HMAC_SECRET?.trim()
-    || process.env.CRADLE_RELAYD_DEV_HMAC_SECRET?.trim()
+    || process.env.CRADLE_RELAYD_HMAC_SECRET?.trim()
   if (secret) {
     return secret
   }

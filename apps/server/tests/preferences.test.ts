@@ -48,6 +48,10 @@ describe('preferences capability', () => {
           blockCodexAppServerLogInserts: false,
           nativeProviderSkillProjection: false,
         },
+        worktreeCleanup: {
+          maxWorktrees: 25,
+          maxTotalSizeGb: 50,
+        },
       })
 
       const filePath = join(dataDir, 'preferences', 'app.json')
@@ -74,6 +78,10 @@ describe('preferences capability', () => {
           blockCodexAppServerLogInserts: false,
           nativeProviderSkillProjection: false,
         },
+        worktreeCleanup: {
+          maxWorktrees: 25,
+          maxTotalSizeGb: 50,
+        },
       })
 
       const finalRes = await app.handle(new Request('http://localhost/preferences/app'))
@@ -85,6 +93,10 @@ describe('preferences capability', () => {
           continueBlockedCodexGoals: false,
           blockCodexAppServerLogInserts: false,
           nativeProviderSkillProjection: false,
+        },
+        worktreeCleanup: {
+          maxWorktrees: 25,
+          maxTotalSizeGb: 50,
         },
       })
     }

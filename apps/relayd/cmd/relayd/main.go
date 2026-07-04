@@ -37,7 +37,7 @@ func run() error {
 	flag.StringVar(&cfg.PublicURL, "public-url", envString("CRADLE_RELAYD_PUBLIC_URL", "http://127.0.0.1:8787"), "public relay URL")
 	flag.StringVar(&cfg.TokenIssuer, "token-issuer", envString("CRADLE_RELAYD_TOKEN_ISSUER", "cradle-server"), "expected token issuer")
 	flag.StringVar(&cfg.TokenAudience, "token-audience", envString("CRADLE_RELAYD_TOKEN_AUDIENCE", "cradle-relay"), "expected token audience")
-	flag.StringVar(&cfg.DevHMACSecret, "dev-hmac-secret", envString("CRADLE_RELAYD_DEV_HMAC_SECRET", envString("CRADLE_RELAY_HMAC_SECRET", "")), "HMAC token secret (required in production; defaults to a built-in dev secret for local use)")
+	flag.StringVar(&cfg.HMACSecret, "hmac-secret", envString("CRADLE_RELAYD_HMAC_SECRET", envString("CRADLE_RELAY_HMAC_SECRET", "")), "HMAC token secret (required in production; defaults to a built-in dev secret for local use)")
 	flag.DurationVar(&cfg.PairingTTL, "pairing-ttl", envDuration("CRADLE_RELAYD_PAIRING_TTL", 5*time.Minute), "pairing code TTL")
 	flag.DurationVar(&cfg.RoomTTL, "room-ttl", envDuration("CRADLE_RELAYD_ROOM_TTL", 30*time.Minute), "room TTL")
 	flag.DurationVar(&cfg.HeartbeatInterval, "heartbeat-interval", envDuration("CRADLE_RELAYD_HEARTBEAT_INTERVAL", 15*time.Second), "WebSocket heartbeat interval")
@@ -59,7 +59,7 @@ func run() error {
 	}
 
 	var err error
-	cfg.DevHMACSecret, cfg.DevHMACSecretResolved, err = resolveDevHMACSecret(cfg.DevHMACSecret, isProductionEnvironment())
+	cfg.HMACSecret, cfg.HMACSecretResolved, err = resolveHMACSecret(cfg.HMACSecret, isProductionEnvironment())
 	if err != nil {
 		return err
 	}
@@ -71,12 +71,12 @@ func run() error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{}))
 	slog.SetDefault(logger)
 
-	if cfg.DevHMACSecretResolved {
-		logger.Warn("using built-in development HMAC secret; this is insecure and must not be used in production; set CRADLE_RELAYD_DEV_HMAC_SECRET (and CRADLE_RELAY_HMAC_SECRET on the server) to a strong secret")
+	if cfg.HMACSecretResolved {
+		logger.Warn("using built-in development HMAC secret; this is insecure and must not be used in production; set CRADLE_RELAYD_HMAC_SECRET (and CRADLE_RELAY_HMAC_SECRET on the server) to a strong secret")
 	}
 
 	validator, err := token.NewHMACValidator(token.HMACValidatorConfig{
-		Secret:   []byte(cfg.DevHMACSecret),
+		Secret:   []byte(cfg.HMACSecret),
 		Issuer:   cfg.TokenIssuer,
 		Audience: cfg.TokenAudience,
 		Now:      time.Now,
@@ -155,12 +155,12 @@ func run() error {
 	return nil
 }
 
-func resolveDevHMACSecret(value string, production bool) (string, bool, error) {
+func resolveHMACSecret(value string, production bool) (string, bool, error) {
 	if value != "" {
 		return value, false, nil
 	}
 	if production {
-		return "", false, errors.New("HMAC token secret is required in production; set CRADLE_RELAYD_DEV_HMAC_SECRET or CRADLE_RELAY_HMAC_SECRET")
+		return "", false, errors.New("HMAC token secret is required in production; set CRADLE_RELAYD_HMAC_SECRET or CRADLE_RELAY_HMAC_SECRET")
 	}
 	return config.DefaultDevHMACSecret, true, nil
 }

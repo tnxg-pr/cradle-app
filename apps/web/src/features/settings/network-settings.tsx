@@ -1,5 +1,10 @@
-import { Refresh1Line as RefreshIcon, WifiLine as WifiIcon } from '@mingcute/react'
-import { useEffect, useMemo, useState } from 'react'
+import {
+  ClockwiseLine as RestartIcon,
+  Refresh1Line as RefreshIcon,
+  ServerLine as ServerIcon,
+  WifiLine as WifiIcon,
+} from '@mingcute/react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '~/components/ui/badge'
@@ -11,7 +16,13 @@ import { Switch } from '~/components/ui/switch'
 
 import { SettingsGroup } from './settings-container'
 import { SettingsRow } from './settings-row'
-import type { NetworkPreferences, NetworkProxyMode, NetworkProxyStatus } from './use-network-preferences'
+import type {
+  NetworkInboundAccessMode,
+  NetworkInboundPreferences,
+  NetworkPreferences,
+  NetworkProxyMode,
+  NetworkProxyStatus,
+} from './use-network-preferences'
 import { useNetworkPreferences } from './use-network-preferences'
 
 type SettingsKey = keyof typeof import('~/locales/default').default.settings
@@ -20,6 +31,10 @@ const PROXY_MODE_OPTIONS: Array<{ value: NetworkProxyMode, labelKey: SettingsKey
   { value: 'system', labelKey: 'network.mode.system.label' },
   { value: 'custom', labelKey: 'network.mode.custom.label' },
   { value: 'environment', labelKey: 'network.mode.environment.label' },
+]
+const INBOUND_ACCESS_OPTIONS: Array<{ value: NetworkInboundAccessMode, labelKey: SettingsKey }> = [
+  { value: 'local', labelKey: 'network.inbound.access.local' },
+  { value: 'network', labelKey: 'network.inbound.access.network' },
 ]
 
 function normalizeProxyUrl(value: string): string | null {
@@ -105,11 +120,8 @@ export function ProxySettingsGroup() {
     setCustomProxyError(null)
   }, [prefs?.customProxyUrl])
 
-  const statusLabel = useMemo(() => statusBadgeLabel(status, t), [status, t])
-  const currentStatusDescription = useMemo(
-    () => statusDescription(status, t, url => t('network.status.proxyUrl', { url })),
-    [status, t],
-  )
+  const statusLabel = statusBadgeLabel(status, t)
+  const currentStatusDescription = statusDescription(status, t, url => t('network.status.proxyUrl', { url }))
 
   const savePreference = (updates: Partial<NetworkPreferences>) => {
     if (!prefs) {
@@ -234,6 +246,80 @@ export function ProxySettingsGroup() {
                 </Button>
               </div>
             </SettingsRow>
+          </>
+        )}
+    </SettingsGroup>
+  )
+}
+
+export function InboundAccessSettingsGroup() {
+  const { t } = useTranslation('settings')
+  const {
+    prefs,
+    isLoading,
+    savePrefs,
+    isSaving,
+  } = useNetworkPreferences()
+
+  const saveInboundPreference = (updates: Partial<NetworkInboundPreferences>) => {
+    if (!prefs) {
+      return
+    }
+    void savePrefs({ inbound: { ...prefs.inbound, ...updates } })
+  }
+
+  const disabled = !prefs || isSaving
+
+  return (
+    <SettingsGroup
+      label={t('network.inbound.title' as SettingsKey)}
+      description={t('network.inbound.description' as SettingsKey)}
+    >
+      {isLoading || !prefs
+        ? (
+          <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
+            <Spinner className="size-3.5" />
+            {t('network.loading' as SettingsKey)}
+          </div>
+        )
+        : (
+          <>
+            <SettingsRow
+              label={t('network.inbound.server.label' as SettingsKey)}
+              description={t('network.inbound.server.description' as SettingsKey)}
+            >
+              <Select
+                value={prefs.inbound.serverAccessMode}
+                onValueChange={value => saveInboundPreference({ serverAccessMode: value as NetworkInboundAccessMode })}
+                disabled={disabled}
+              >
+                <SelectTrigger size="sm" className="w-[180px]" aria-label={t('network.inbound.server.label' as SettingsKey)}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INBOUND_ACCESS_OPTIONS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {t(option.labelKey)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingsRow>
+
+            <SettingsRow
+              label={t('network.inbound.apply.label' as SettingsKey)}
+              description={t('network.inbound.apply.description' as SettingsKey)}
+            >
+              <Badge variant="outline" className="gap-1.5 text-[11px]">
+                <RestartIcon className="size-3" aria-hidden="true" />
+                {t('network.inbound.apply.badge' as SettingsKey)}
+              </Badge>
+            </SettingsRow>
+
+            <div className="grid grid-cols-[auto_1fr] gap-2 py-3 text-[12px] leading-5 text-muted-foreground">
+              <ServerIcon className="mt-0.5 size-3.5 shrink-0 !text-amber-700 dark:!text-amber-300" aria-hidden="true" />
+              <p className="text-pretty">{t('network.inbound.warning' as SettingsKey)}</p>
+            </div>
           </>
         )}
     </SettingsGroup>

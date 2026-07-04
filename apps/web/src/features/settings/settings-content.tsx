@@ -19,6 +19,7 @@ import { RemoteHostsSettings } from './remote-hosts-settings'
 import { ServerEndpointSettings } from './server-endpoint-settings'
 import { ShortcutSettings } from './shortcut-settings'
 import { SupportSettings } from './support-settings'
+import { WorktreeSettings } from './worktree-settings'
 
 const SECTION_MAP: Record<string, React.ComponentType> = {
   appearance: AppearanceSettings,
@@ -27,6 +28,7 @@ const SECTION_MAP: Record<string, React.ComponentType> = {
   agents: AgentList,
   chat: ChatSettings,
   await: AwaitSettings,
+  worktrees: WorktreeSettings,
   jarvis: JarvisSettings,
   plugins: PluginsSettings,
   chronicle: ChronicleSettings,
@@ -50,7 +52,7 @@ interface SettingsContentProps {
 }
 
 export function SettingsContent({ section }: SettingsContentProps) {
-  const activeSection = !import.meta.env.DEV && (section === 'chronicle' || section === 'externalIssues' || section === 'remoteHosts') ? 'appearance' : section
+  const activeSection = !import.meta.env.DEV && (section === 'chronicle' || section === 'externalIssues') ? 'appearance' : section
   const ActiveSection = SECTION_MAP[activeSection] ?? AppearanceSettings
   const fixedHeight = FIXED_HEIGHT_SECTIONS.has(activeSection)
 

@@ -65,6 +65,8 @@
   "session.action.showLess": "表示を減らす",
   "session.action.unpin": "ピン留めを解除",
   "session.aria.error": "セッションエラー",
+  "session.aria.isolated": "worktree で実行中",
+  "session.aria.isolatedBranch": "worktree で実行中 ({{branch}})",
   "session.aria.menu": "セッションメニュー",
   "session.aria.newReply": "新しい返信",
   "session.aria.pinned": "ピン留め済み",

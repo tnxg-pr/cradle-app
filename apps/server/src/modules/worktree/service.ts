@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import { lstat, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 
 import type { Session, Worktree } from '@cradle/db'
-import { backendRuns, sessions, worktrees } from '@cradle/db'
+import { backendRuns, sessions, workspaces, worktrees } from '@cradle/db'
 import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 
 import { AppError } from '../../errors/app-error'
@@ -42,6 +44,18 @@ export interface WorktreeView {
   createdBySessionId: string | null
   createdAt: number
   updatedAt: number
+}
+
+export interface ManagedWorktreeView extends WorktreeView {
+  workspaceName: string
+  sizeBytes: number
+  sessionCount: number
+}
+
+export interface ManagedWorktreeCleanupResult {
+  cleaned: ManagedWorktreeView[]
+  skipped: number
+  totalSizeBytes: number
 }
 
 export interface SessionExecutionRoot {
@@ -99,6 +113,54 @@ function toWorktreeView(record: Worktree): WorktreeView {
     createdBySessionId: record.createdBySessionId,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+  }
+}
+
+async function directorySizeBytes(path: string): Promise<number> {
+  let entry
+  try {
+    entry = await lstat(path)
+  }
+  catch {
+    return 0
+  }
+  if (!entry.isDirectory()) {
+    return entry.size
+  }
+
+  let total = 0
+  let children
+  try {
+    children = await readdir(path, { withFileTypes: true })
+  }
+  catch {
+    return 0
+  }
+  for (const child of children) {
+    const childPath = join(path, child.name)
+    if (child.isDirectory()) {
+      total += await directorySizeBytes(childPath)
+      continue
+    }
+    try {
+      total += (await lstat(childPath)).size
+    }
+    catch {
+      // The checkout may be changing while Settings is open.
+    }
+  }
+  return total
+}
+
+async function toManagedWorktreeView(
+  record: Worktree,
+  workspaceName: string,
+): Promise<ManagedWorktreeView> {
+  return {
+    ...toWorktreeView(record),
+    workspaceName,
+    sizeBytes: await directorySizeBytes(record.path),
+    sessionCount: countSessionsUsingWorktree(record.id),
   }
 }
 
@@ -192,6 +254,32 @@ export function listWorktreesByWorkspace(sourceWorkspaceId: string): WorktreeVie
     .where(and(eq(worktrees.sourceWorkspaceId, sourceWorkspaceId), eq(worktrees.status, 'active')))
     .all()
     .map(toWorktreeView)
+}
+
+export async function listManagedWorktrees(): Promise<{ worktrees: ManagedWorktreeView[]; totalSizeBytes: number }> {
+  const workspaceNames = new Map(
+    db()
+      .select({ id: workspaces.id, name: workspaces.name })
+      .from(workspaces)
+      .all()
+      .map(workspace => [workspace.id, workspace.name] as const),
+  )
+  const records = db()
+    .select()
+    .from(worktrees)
+    .where(eq(worktrees.status, 'active'))
+    .all()
+    .sort((left, right) => right.createdAt - left.createdAt)
+
+  const managed = await Promise.all(records.map(record => toManagedWorktreeView(
+    record,
+    workspaceNames.get(record.sourceWorkspaceId) ?? record.sourceWorkspaceId,
+  )))
+
+  return {
+    worktrees: managed,
+    totalSizeBytes: managed.reduce((total, worktree) => total + worktree.sizeBytes, 0),
+  }
 }
 
 export function resolveSessionExecutionRoot(session: Session): SessionExecutionRoot {
@@ -455,15 +543,38 @@ export async function startSessionIsolation(input: {
     slug,
   })
 
-  const status = isSessionStreaming(session.id)
-  const pending = status
+  const streaming = isSessionStreaming(session.id)
+  // Keep the worktree pending when the session is mid-run OR the main checkout
+  // has uncommitted changes. In the dirty-main case the user must decide whether
+  // to migrate those changes into the isolated checkout before we switch the
+  // session's execution root, so we surface the boundary dialog and hold the
+  // worktree in pending state until they choose.
+  const workspacePath = Workspace.getLocalWorkspacePath(session.workspaceId)
+  const dirty = workspacePath ? await isWorkingTreeDirty(workspacePath) : false
+  const pending = streaming || dirty
+
   await bindSessionWorktree({
     sessionId: session.id,
     worktreeId: worktree.id,
     pending,
   })
 
-  if (!pending) {
+  if (dirty && !streaming) {
+    // Idle session with a dirty main checkout: surface the boundary dialog
+    // immediately. Streaming sessions defer this to evaluateIsolationBoundary
+    // (called from the terminal finalizer after the run terminates), and the
+    // dialog is suppressed while streaming anyway, so we only set it eagerly
+    // for idle sessions — which otherwise never go through the finalizer path
+    // and would silently skip the migrate/leave-main choice.
+    db().update(sessions).set({
+      configJson: writeIsolationBoundaryConfig(session.configJson, {
+        required: true,
+        pendingWorktreeId: worktree.id,
+      }),
+      updatedAt: now(),
+    }).where(eq(sessions.id, session.id)).run()
+  }
+  else if (!pending) {
     db().update(sessions).set({
       worktreeId: worktree.id,
       pendingWorktreeId: null,
@@ -624,6 +735,49 @@ export async function cleanupWorktree(input: {
     .all()
   for (const bound of boundSessions) {
     leaveSessionIsolation(bound.id)
+  }
+}
+
+export async function cleanupManagedWorktrees(input: {
+  maxWorktrees: number
+  maxTotalSizeGb: number
+}): Promise<ManagedWorktreeCleanupResult> {
+  const initial = await listManagedWorktrees()
+  const candidates = [...initial.worktrees].sort((left, right) => left.createdAt - right.createdAt)
+  const countLimit = input.maxWorktrees > 0
+    ? input.maxWorktrees
+    : Number.POSITIVE_INFINITY
+  const sizeLimitBytes = input.maxTotalSizeGb > 0
+    ? input.maxTotalSizeGb * 1024 * 1024 * 1024
+    : Number.POSITIVE_INFINITY
+
+  const cleaned: ManagedWorktreeView[] = []
+  let skipped = 0
+  let remainingCount = initial.worktrees.length
+  let remainingSizeBytes = initial.totalSizeBytes
+
+  for (const candidate of candidates) {
+    const exceedsCount = remainingCount > countLimit
+    const exceedsSize = remainingSizeBytes > sizeLimitBytes
+    if (!exceedsCount && !exceedsSize) {
+      break
+    }
+
+    if (candidate.sessionCount > 0) {
+      skipped += 1
+      continue
+    }
+
+    await cleanupWorktree({ worktreeId: candidate.id, mode: 'abandon' })
+    cleaned.push(candidate)
+    remainingCount -= 1
+    remainingSizeBytes = Math.max(0, remainingSizeBytes - candidate.sizeBytes)
+  }
+
+  return {
+    cleaned,
+    skipped,
+    totalSizeBytes: (await listManagedWorktrees()).totalSizeBytes,
   }
 }
 

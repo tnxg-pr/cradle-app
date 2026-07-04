@@ -13,6 +13,10 @@ export interface AppPreferences {
     blockCodexAppServerLogInserts: boolean
     nativeProviderSkillProjection: boolean
   }
+  worktreeCleanup: {
+    maxWorktrees: number
+    maxTotalSizeGb: number
+  }
 }
 
 export type AppFeatureFlagKey = keyof AppPreferences['featureFlags']
@@ -30,6 +34,13 @@ const AppPreferencesSchema = z.object({
     continueBlockedCodexGoals: false,
     blockCodexAppServerLogInserts: false,
     nativeProviderSkillProjection: false,
+  }),
+  worktreeCleanup: z.object({
+    maxWorktrees: z.number().min(0).default(25),
+    maxTotalSizeGb: z.number().min(0).default(50),
+  }).default({
+    maxWorktrees: 25,
+    maxTotalSizeGb: 50,
   }),
 })
 
@@ -58,6 +69,10 @@ export function useUpdateAppPreferencesMutation() {
         featureFlags: {
           ...current.featureFlags,
           ...updates.featureFlags,
+        },
+        worktreeCleanup: {
+          ...current.worktreeCleanup,
+          ...updates.worktreeCleanup,
         },
       }
       await putPreferencesApp({ body: next, throwOnError: true })

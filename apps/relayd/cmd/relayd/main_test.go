@@ -7,10 +7,10 @@ import (
 	"github.com/cradle/relayd/internal/config"
 )
 
-func TestResolveDevHMACSecretUsesBuiltInDefault(t *testing.T) {
-	secret, resolved, err := resolveDevHMACSecret("", false)
+func TestResolveHMACSecretUsesBuiltInDefault(t *testing.T) {
+	secret, resolved, err := resolveHMACSecret("", false)
 	if err != nil {
-		t.Fatalf("resolveDevHMACSecret returned error: %v", err)
+		t.Fatalf("resolveHMACSecret returned error: %v", err)
 	}
 	if secret != config.DefaultDevHMACSecret {
 		t.Fatalf("secret = %q, expected built-in dev default", secret)
@@ -20,10 +20,10 @@ func TestResolveDevHMACSecretUsesBuiltInDefault(t *testing.T) {
 	}
 }
 
-func TestResolveDevHMACSecretPreservesExplicitSecret(t *testing.T) {
-	secret, resolved, err := resolveDevHMACSecret("explicit-secret", true)
+func TestResolveHMACSecretPreservesExplicitSecret(t *testing.T) {
+	secret, resolved, err := resolveHMACSecret("explicit-secret", true)
 	if err != nil {
-		t.Fatalf("resolveDevHMACSecret returned error: %v", err)
+		t.Fatalf("resolveHMACSecret returned error: %v", err)
 	}
 	if secret != "explicit-secret" {
 		t.Fatalf("secret = %q, expected explicit secret", secret)
@@ -33,8 +33,8 @@ func TestResolveDevHMACSecretPreservesExplicitSecret(t *testing.T) {
 	}
 }
 
-func TestResolveDevHMACSecretRejectsBuiltInDefaultInProduction(t *testing.T) {
-	_, _, err := resolveDevHMACSecret("", true)
+func TestResolveHMACSecretRejectsBuiltInDefaultInProduction(t *testing.T) {
+	_, _, err := resolveHMACSecret("", true)
 	if err == nil {
 		t.Fatal("err = nil, expected production secret error")
 	}

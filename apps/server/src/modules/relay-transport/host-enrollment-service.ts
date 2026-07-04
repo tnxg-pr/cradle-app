@@ -8,7 +8,7 @@ import { db } from '../../infra'
 import { upsertSecret } from '../secrets/service'
 import { createRelayRoomId, mintRelayToken } from '../relay-servers/relay-token-service'
 import { generateRelayKeyPair, relayPublicKeyFingerprint } from './crypto'
-import { getHostConnectorService } from './host-connector'
+import { getHostConnectorService, type HostEnrollmentLiveState } from './host-connector'
 
 /**
  * Host-side enrollment service.
@@ -40,6 +40,8 @@ export interface HostEnrollmentView {
   lastError: string | null
   createdAt: number
   updatedAt: number
+  /** Live in-memory state from the host-connector, or null if it isn't running. */
+  live: HostEnrollmentLiveState | null
 }
 
 export interface CreatedHostEnrollment extends HostEnrollmentView {
@@ -231,5 +233,6 @@ function toView(row: typeof relayHostEnrollments.$inferSelect): HostEnrollmentVi
     lastError: row.lastError,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    live: getHostConnectorService()?.getLiveState(row.id) ?? null,
   }
 }
