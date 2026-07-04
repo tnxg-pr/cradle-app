@@ -73,10 +73,13 @@ export async function submitSideConversationMessage(input: SubmitSideConversatio
       const body = await response.text().catch(() => '')
       throw new Error(`Failed to start side response: ${response.status} ${body}`)
     }
+    const acceptedAtMs = performance.now()
+    const store = useRendererChatStore.getState()
     const runId = response.headers.get('x-cradle-run-id')
     if (runId) {
-      useRendererChatStore.getState().setRunDisplayId(assistantMessageId, runId)
+      store.setRunDisplayId(assistantMessageId, runId)
     }
+    store.markRunAccepted(assistantMessageId, acceptedAtMs)
     await handler.consume(buildUIMessageChunkStreamFromResponse(response, viewSessionId))
     handler.finish()
   }
