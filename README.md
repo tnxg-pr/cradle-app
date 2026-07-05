@@ -99,14 +99,12 @@ Cradle is a desktop-first platform for managing AI agents and their workflows. I
     <td>
       <h3>Plugin System</h3>
       <p>Extend Cradle with official and community plugins. Build your own with the Plugin SDK to add new capabilities and integrations.</p>
-      <p>You can enjoy CC-Switch, Nowledge Mem, and other plugins in the Cradle plugin marketplace.</p>
     </td>
   </tr>
   <tr>
     <td>
       <h3>Your Data, Your Control</h3>
       <p>Your data stays on your machine. Cradle is built with a privacy-first approach — no telemetry, no cloud dependency, full local control over your agents and conversations.</p>
-      <p>Cradle will faithfully record all the data it may access, and your data should not be modified without reason!</p>
     </td>
     <td>
       <img src=".github/readme/about-data-care.png" alt="About Data Care" />
