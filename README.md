@@ -18,12 +18,7 @@
 > The project is still in the early stages of development and I am not ready to accept contributions. If you have any ideas or suggestions, please feel free to open an issue. But anyways, thank you for your support and interest in this project ❤️.
 
 <p align="center">
-<a href="#gh-light-mode-only">
-  <img src='./apps/landing/public/screenshot-light.png' alt='Screenshot' width='800px' />
-</a>
-<a href="#gh-dark-mode-only">
-  <img src='./apps/landing/public/screenshot-dark.png' alt='Screenshot' width='800px' />
-</a>
+<img src='./.github/readme/Slide 4:3.png' alt='Screenshot' width='800px' />
 </p>
 
 
