@@ -4,6 +4,7 @@ import {
   AGENT_MODELS_QUERY_KEY,
   agentModelsQueryKey,
   providerTargetModelsQueryKey,
+  shouldRefreshProviderTargetModelsOnCacheMiss,
 } from './use-agent-models'
 
 describe('agentModelsQueryKey', () => {
@@ -37,5 +38,27 @@ describe('providerTargetModelsQueryKey', () => {
       'provider-target:target-1',
       'workspace:workspace-1',
     ])
+  })
+})
+
+describe('shouldRefreshProviderTargetModelsOnCacheMiss', () => {
+  it('refreshes runtime-owned provider targets on cache miss', () => {
+    expect(shouldRefreshProviderTargetModelsOnCacheMiss({
+      id: 'runtime-native:opencode:opencode-go',
+    })).toBe(true)
+  })
+
+  it('refreshes provider targets from runtime-owned sources on cache miss', () => {
+    expect(shouldRefreshProviderTargetModelsOnCacheMiss({
+      id: 'projected-provider',
+      sourceKey: 'runtime-native:opencode',
+    })).toBe(true)
+  })
+
+  it('keeps ordinary provider targets cache-only until the user explicitly refreshes', () => {
+    expect(shouldRefreshProviderTargetModelsOnCacheMiss({
+      id: 'manual-provider',
+      sourceKey: 'external-source:local-agent-config',
+    })).toBe(false)
   })
 })

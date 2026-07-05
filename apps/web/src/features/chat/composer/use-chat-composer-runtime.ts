@@ -164,7 +164,7 @@ export function useChatComposerRuntime({
   const boundProviderTarget = useMemo(() => {
     return sessionBinding?.providerTargetId ? { id: sessionBinding.providerTargetId } : null
   }, [sessionBinding?.providerTargetId])
-  const { models: providerSessionModels } = useProviderTargetModels(boundProviderTarget)
+  const { models: providerSessionModels } = useProviderTargetModels(boundProviderTarget, { workspaceId })
   const sessionModels = providerSessionModels
   const hasRuntimeCodeReviewSlot = useMemo(() => {
     return Boolean(runtimeCapabilities?.uiSlots.some((slot) => {
