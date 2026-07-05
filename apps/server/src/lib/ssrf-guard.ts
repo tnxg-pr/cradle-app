@@ -2,6 +2,7 @@ import { promises as dns } from 'node:dns'
 import net from 'node:net'
 
 import { AppError } from '../errors/app-error'
+import { outboundFetch } from './outbound-network'
 
 /**
  * Link-preview SSRF guard.
@@ -22,61 +23,147 @@ export interface ResolvedFetchTarget {
   hostname: string
 }
 
-export async function resolveSafeFetchTarget(rawUrl: string): Promise<ResolvedFetchTarget> {
+export interface ResolveSafeFetchTargetOptions {
+  allowPrivateHosts?: ReadonlySet<string> | readonly string[]
+  invalidUrlCode?: string
+  invalidSchemeCode?: string
+  blockedHostCode?: string
+  unresolvedHostCode?: string
+  message?: string
+}
+
+export interface GuardedFetchOptions extends ResolveSafeFetchTargetOptions {
+  maxRedirects?: number
+}
+
+type AddressLookup = (hostname: string) => Promise<string[]>
+type SsrGuardTestGlobal = typeof globalThis & {
+  __cradleSsrAddressLookupForTests?: AddressLookup | null
+}
+
+const DEFAULT_MAX_REDIRECTS = 5
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+const SENSITIVE_REDIRECT_HEADERS = new Set([
+  'authorization',
+  'cookie',
+  'proxy-authorization',
+  'x-api-key',
+])
+
+export function setSsrAddressLookupForTests(lookup: AddressLookup | null): void {
+  const testGlobal = globalThis as SsrGuardTestGlobal
+  testGlobal.__cradleSsrAddressLookupForTests = lookup
+}
+
+export async function resolveSafeFetchTarget(
+  rawUrl: string,
+  options: ResolveSafeFetchTargetOptions = {},
+): Promise<ResolvedFetchTarget> {
   let parsed: URL
   try {
     parsed = new URL(rawUrl)
   }
   catch {
     throw new AppError({
-      code: 'link_preview_invalid_url',
+      code: options.invalidUrlCode ?? 'link_preview_invalid_url',
       status: 400,
-      message: 'Link preview requires a valid URL',
+      message: options.message ?? 'Outbound fetch requires a valid URL',
     })
   }
 
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new AppError({
-      code: 'link_preview_invalid_scheme',
+      code: options.invalidSchemeCode ?? 'link_preview_invalid_scheme',
       status: 400,
-      message: 'Link preview only supports http and https URLs',
+      message: options.message ?? 'Outbound fetch only supports http and https URLs',
     })
   }
 
   const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '')
 
   if (BLOCKED_METADATA_HOSTS.has(hostname)) {
-    throw new AppError({
-      code: 'link_preview_blocked_host',
-      status: 400,
-      message: 'Link preview target is not allowed',
-    })
+    throwBlocked(options)
   }
 
   // Literal IP hosts are checked directly; hostnames are resolved and every
   // returned address is checked. We resolve before fetching so DNS-rebinding
   // to a private IP at request time is still caught for the resolved name.
+  const privateHostAllowed = isAllowedPrivateHost(hostname, options.allowPrivateHosts)
   if (net.isIP(hostname)) {
-    assertPublicIp(hostname)
+    if (!privateHostAllowed) {
+      assertPublicIp(hostname, options)
+    }
   }
   else {
     const addresses = await resolveAllAddresses(hostname)
     if (addresses.length === 0) {
       throw new AppError({
-        code: 'link_preview_unresolved_host',
+        code: options.unresolvedHostCode ?? 'link_preview_unresolved_host',
         status: 400,
-        message: 'Link preview target host could not be resolved',
+        message: options.message ?? 'Outbound fetch target host could not be resolved',
       })
     }
-    for (const address of addresses) {
-      assertPublicIp(address)
+    if (!privateHostAllowed) {
+      for (const address of addresses) {
+        assertPublicIp(address, options)
+      }
     }
   }
 
   return { url: parsed.toString(), hostname }
 }
 
+export async function guardedFetch(
+  rawUrl: string,
+  init: RequestInit = {},
+  options: GuardedFetchOptions = {},
+): Promise<Response> {
+  const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS
+  let target = await resolveSafeFetchTarget(rawUrl, options)
+  let requestInit = stripRedirectMode(init)
+
+  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+    const response = await outboundFetch(target.url, {
+      ...requestInit,
+      redirect: 'manual',
+    })
+
+    if (!REDIRECT_STATUSES.has(response.status)) {
+      return response
+    }
+
+    const location = response.headers.get('location')
+    if (!location) {
+      return response
+    }
+
+    if (redirectCount === maxRedirects) {
+      throw new AppError({
+        code: 'outbound_fetch_redirect_limit',
+        status: 400,
+        message: 'Outbound fetch followed too many redirects',
+        details: { url: target.url, maxRedirects },
+      })
+    }
+
+    const nextUrl = new URL(location, target.url).toString()
+    requestInit = projectRedirectInit(requestInit, target.url, nextUrl)
+    target = await resolveSafeFetchTarget(nextUrl, options)
+  }
+
+  throw new AppError({
+    code: 'outbound_fetch_redirect_limit',
+    status: 400,
+    message: 'Outbound fetch followed too many redirects',
+    details: { url: target.url, maxRedirects },
+  })
+}
+
 async function resolveAllAddresses(hostname: string): Promise<string[]> {
+  const addressLookupForTests = (globalThis as SsrGuardTestGlobal).__cradleSsrAddressLookupForTests
+  if (addressLookupForTests) {
+    return addressLookupForTests(hostname)
+  }
   try {
     const records = await dns.lookup(hostname, { all: true })
     return records.map(record => record.address)
@@ -86,36 +173,69 @@ async function resolveAllAddresses(hostname: string): Promise<string[]> {
   }
 }
 
-function assertPublicIp(ip: string): void {
+function assertPublicIp(ip: string, options: ResolveSafeFetchTargetOptions): void {
   if (BLOCKED_METADATA_HOSTS.has(ip)) {
-    throwBlocked()
+    throwBlocked(options)
   }
 
   const version = net.isIP(ip)
   if (version === 4) {
     if (isPrivateIPv4(ip)) {
-      throwBlocked()
+      throwBlocked(options)
     }
     return
   }
 
   if (version === 6) {
     if (isPrivateIPv6(ip)) {
-      throwBlocked()
+      throwBlocked(options)
     }
     return
   }
 
   // Not an IP we recognize — treat conservatively.
-  throwBlocked()
+  throwBlocked(options)
 }
 
-function throwBlocked(): never {
+function throwBlocked(options: ResolveSafeFetchTargetOptions = {}): never {
   throw new AppError({
-    code: 'link_preview_blocked_host',
+    code: options.blockedHostCode ?? 'link_preview_blocked_host',
     status: 400,
-    message: 'Link preview target is not allowed',
+    message: options.message ?? 'Outbound fetch target is not allowed',
   })
+}
+
+function isAllowedPrivateHost(
+  hostname: string,
+  allowPrivateHosts: ResolveSafeFetchTargetOptions['allowPrivateHosts'],
+): boolean {
+  if (!allowPrivateHosts || BLOCKED_METADATA_HOSTS.has(hostname)) {
+    return false
+  }
+  const allowed = allowPrivateHosts instanceof Set
+    ? allowPrivateHosts
+    : new Set(allowPrivateHosts)
+  return allowed.has(hostname)
+}
+
+function stripRedirectMode(init: RequestInit): RequestInit {
+  const { redirect: _redirect, ...rest } = init
+  return rest
+}
+
+function projectRedirectInit(init: RequestInit, currentUrl: string, nextUrl: string): RequestInit {
+  if (new URL(currentUrl).origin === new URL(nextUrl).origin || !init.headers) {
+    return init
+  }
+
+  const headers = new Headers(init.headers)
+  for (const header of SENSITIVE_REDIRECT_HEADERS) {
+    headers.delete(header)
+  }
+  return {
+    ...init,
+    headers,
+  }
 }
 
 /**

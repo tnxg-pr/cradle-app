@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 
 type ElysiaApp = Awaited<ReturnType<typeof createServerApp>>
 
@@ -23,14 +24,14 @@ function makeTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
 
+function insertWorkspace(id: string, name: string, path: string): void {
+  db().insert(workspaces).values(workspaceFixture({ id, name, path })).run()
+}
+
 async function createCliTuiSession(app: ElysiaApp, workspaceRoot: string, fixtureScript = TERMINAL_FIXTURE_SCRIPT) {
   const _app = app
   void _app
-  db().insert(workspaces).values({
-    id: 'workspace-pty',
-    name: 'Workspace Pty',
-    path: workspaceRoot,
-  }).run()
+  insertWorkspace('workspace-pty', 'Workspace Pty', workspaceRoot)
 
   insertAgentRow({
     id: 'agent-cli-tui',
@@ -185,6 +186,7 @@ describe('pty capability HTTP control plane', () => {
 
     try {
       app = await createServerApp()
+      insertWorkspace('workspace-resource-panel', 'Workspace Resource Panel', workspaceRoot)
 
       const startRes = await app.handle(new Request('http://localhost/terminal-sessions/shell/start', {
         method: 'POST',
@@ -270,6 +272,54 @@ describe('pty capability HTTP control plane', () => {
     }
   })
 
+  it('constrains bottom panel terminal cwd to registered workspace roots', async () => {
+    const dataDir = makeTempDir('cradle-data-')
+    const workspaceRoot = makeTempDir('cradle-pty-workspace-')
+    const previousDataDir = process.env.CRADLE_DATA_DIR
+    process.env.CRADLE_DATA_DIR = dataDir
+    shutdownInfra()
+
+    let app: ElysiaApp | undefined
+
+    try {
+      app = await createServerApp()
+      insertWorkspace('workspace-shell-boundary', 'Workspace Shell Boundary', workspaceRoot)
+
+      const rejected = await app.handle(new Request('http://localhost/terminal-sessions/shell/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ptyId: 'cwd-rejected', cwd: '/', cols: 80, rows: 24 }),
+      }))
+      expect(rejected.status).toBe(403)
+      expect((await rejected.json()).code).toBe('terminal_shell_cwd_outside_allowed_roots')
+
+      const accepted = await app.handle(new Request('http://localhost/terminal-sessions/shell/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ptyId: 'cwd-accepted', cwd: workspaceRoot, cols: 80, rows: 24 }),
+      }))
+      expect(accepted.status).toBe(200)
+      expect(await accepted.json()).toEqual({ ptyId: 'cwd-accepted', running: true })
+
+      const stopRes = await app.handle(new Request('http://localhost/terminal-sessions/shell/cwd-accepted', { method: 'DELETE' }))
+      expect(stopRes.status).toBe(200)
+    }
+    finally {
+      if (app) {
+        await app.handle(new Request('http://localhost/terminal-sessions/shell/cwd-accepted', { method: 'DELETE' }))
+      }
+      shutdownInfra()
+      rmSync(dataDir, { recursive: true, force: true })
+      rmSync(workspaceRoot, { recursive: true, force: true })
+      if (previousDataDir === undefined) {
+        delete process.env.CRADLE_DATA_DIR
+      }
+      else {
+        process.env.CRADLE_DATA_DIR = previousDataDir
+      }
+    }
+  })
+
   it('returns structured errors for invalid input and unsupported sessions', async () => {
     const dataDir = makeTempDir('cradle-data-')
     const workspaceRoot = makeTempDir('cradle-pty-workspace-')
@@ -281,11 +331,7 @@ describe('pty capability HTTP control plane', () => {
 
     try {
       app = await createServerApp()
-      db().insert(workspaces).values({
-        id: 'workspace-pty',
-        name: 'Workspace Pty',
-        path: workspaceRoot,
-      }).run()
+      insertWorkspace('workspace-pty', 'Workspace Pty', workspaceRoot)
 
       insertSessionRow({
         id: 'session-non-cli',

@@ -3,6 +3,14 @@ import { readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 
+import * as Workspace from '../workspace/service'
+import {
+  assertWithinAllowedRoots,
+  isPathWithinRoot,
+  resolveDirectoryBoundary,
+  type ResolvedRootBoundary,
+} from './path-boundary'
+
 export interface DirectoryEntry {
   name: string
   path: string
@@ -24,11 +32,15 @@ export async function browse(requestedPath?: string): Promise<BrowseResult> {
     raw = homedir() + raw.slice(1)
   }
   const target = resolve(raw)
-
-  const realStat = await stat(target)
-  if (!realStat.isDirectory()) {
-    throw new Error(`Not a directory: ${target}`)
-  }
+  const boundary = await resolveDirectoryBoundary(target, { requestedPath })
+  const roots = await getBrowseAllowedRoots()
+  assertWithinAllowedRoots({
+    target: boundary,
+    roots,
+    code: 'filesystem_path_outside_allowed_roots',
+    message: 'Filesystem browse path is outside allowed roots',
+    details: { allowedRoots: roots.map(root => root.requestedPath) },
+  })
 
   const dirents = await readdir(target, { withFileTypes: true })
 
@@ -67,7 +79,10 @@ export async function browse(requestedPath?: string): Promise<BrowseResult> {
   })
 
   const segments = target.split(sep)
-  const parent = segments.length > 1 ? resolve(target, '..') : null
+  const candidateParent = segments.length > 1 ? resolve(target, '..') : null
+  const parent = candidateParent && await isBrowsePathAllowed(candidateParent, roots)
+    ? candidateParent
+    : null
 
   return { current: target, parent, entries }
 }
@@ -92,4 +107,39 @@ export function favorites(): FavoriteEntry[] {
   ]
   // Only return directories that actually exist
   return candidates.filter(c => existsSync(c.path))
+}
+
+async function getBrowseAllowedRoots(): Promise<ResolvedRootBoundary[]> {
+  const candidates = [
+    homedir(),
+    ...Workspace.list()
+      .filter(workspace => workspace.locator.hostId === 'local')
+      .map(workspace => workspace.locator.path),
+  ]
+
+  const roots: ResolvedRootBoundary[] = []
+  const seen = new Set<string>()
+  for (const candidate of candidates) {
+    try {
+      const root = await resolveDirectoryBoundary(candidate, { root: candidate })
+      if (!seen.has(root.realPath)) {
+        seen.add(root.realPath)
+        roots.push(root)
+      }
+    }
+    catch {
+      // Ignore stale workspace paths and missing home-like picker shortcuts.
+    }
+  }
+  return roots
+}
+
+async function isBrowsePathAllowed(path: string, roots: ResolvedRootBoundary[]): Promise<boolean> {
+  try {
+    const boundary = await resolveDirectoryBoundary(path, { path })
+    return roots.some(root => isPathWithinRoot(root.realPath, boundary.realPath))
+  }
+  catch {
+    return false
+  }
 }

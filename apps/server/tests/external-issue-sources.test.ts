@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 import { resetTokenCache } from '../src/lib/github-api'
 import { registerExternalIssueSource } from '../src/plugins/external-issue-source-registry'
 
@@ -88,10 +89,12 @@ async function setup() {
   process.env.CRADLE_EXTERNAL_PLUGINS_DIRS = ''
   const app = await createServerApp({ startBackgroundTasks: false })
   db().insert(workspaces).values({
-    id: 'workspace-external-issues',
-    name: 'Workspace External Issues',
-    identifier: 'EXT',
-    path: workspaceRoot,
+    ...workspaceFixture({
+      id: 'workspace-external-issues',
+      name: 'Workspace External Issues',
+      identifier: 'EXT',
+      path: workspaceRoot,
+    }),
   }).run()
   return { app, dataDir, workspaceRoot, previous }
 }
@@ -303,12 +306,12 @@ describe('external issue sources capability', () => {
       }
       const firstBinding = await bind('workspace-external-issues')
 
-      db().insert(workspaces).values({
+      db().insert(workspaces).values(workspaceFixture({
         id: 'workspace-external-issues-b',
         name: 'Workspace External Issues B',
         identifier: 'EXB',
         path: makeTempDir('cradle-workspace-b-'),
-      }).run()
+      })).run()
       const secondBinding = await bind('workspace-external-issues-b')
 
       blockRead = true

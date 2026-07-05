@@ -118,14 +118,14 @@ describe('plugin runtime registry', () => {
     expect(listPluginDescriptors()[0]?.capabilities).toHaveLength(2)
   })
 
-  it('classifies configured external roots as trusted external local sources', () => {
+  it('classifies configured external roots as external local sources requiring trust', () => {
     process.env.CRADLE_EXTERNAL_PLUGINS_DIRS = '/external/plugins'
 
     const source = classifyPluginSource('/external/plugins/example', '/external/plugins', 'externalLocal')
 
     expect(source.kind).toBe('externalLocal')
-    expect(source.trusted).toBe(true)
-    expect(source.reason).toContain('trusted operator-selected code')
+    expect(source.trusted).toBe(false)
+    expect(source.reason).toContain('operator trust grant')
   })
 
   it('projects structured manifest declarations into descriptor records', () => {

@@ -12,6 +12,7 @@ import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
 import { listDueOccurrences } from '../src/modules/automation/scheduler'
 import * as Automation from '../src/modules/automation/service'
+import { workspaceFixture } from './helpers/workspace-fixture'
 
 type ElysiaApp = Awaited<ReturnType<typeof createServerApp>>
 
@@ -153,9 +154,11 @@ describe('automation capability', () => {
     try {
       app = await createServerApp({ startBackgroundTasks: false })
       db().insert(workspaces).values({
-        id: 'workspace-automation',
-        name: 'Workspace Automation',
-        path: workspaceRoot,
+        ...workspaceFixture({
+          id: 'workspace-automation',
+          name: 'Workspace Automation',
+          path: workspaceRoot,
+        }),
       }).run()
       await createProfile(app, 'profile-automation')
 
@@ -249,9 +252,11 @@ describe('automation capability', () => {
 
       app = await createServerApp({ startBackgroundTasks: false })
       db().insert(workspaces).values({
-        id: 'workspace-automation',
-        name: 'Workspace Automation',
-        path: workspaceRoot,
+        ...workspaceFixture({
+          id: 'workspace-automation',
+          name: 'Workspace Automation',
+          path: workspaceRoot,
+        }),
       }).run()
       await createProfile(app, 'profile-automation')
 
@@ -366,9 +371,11 @@ describe('automation capability', () => {
 
       app = await createServerApp({ startBackgroundTasks: false })
       db().insert(workspaces).values({
-        id: 'workspace-automation',
-        name: 'Workspace Automation',
-        path: workspaceRoot,
+        ...workspaceFixture({
+          id: 'workspace-automation',
+          name: 'Workspace Automation',
+          path: workspaceRoot,
+        }),
       }).run()
       await createProfile(app, 'profile-automation')
       await createAutomation(app)
@@ -413,9 +420,11 @@ describe('automation capability', () => {
     try {
       app = await createServerApp({ startBackgroundTasks: false })
       db().insert(workspaces).values({
-        id: 'workspace-automation',
-        name: 'Workspace Automation',
-        path: workspaceRoot,
+        ...workspaceFixture({
+          id: 'workspace-automation',
+          name: 'Workspace Automation',
+          path: workspaceRoot,
+        }),
       }).run()
       await createProfile(app, 'profile-automation')
       await createAutomation(app)
@@ -475,9 +484,11 @@ describe('automation capability', () => {
     try {
       app = await createServerApp({ startBackgroundTasks: false })
       db().insert(workspaces).values({
-        id: 'workspace-automation',
-        name: 'Workspace Automation',
-        path: workspaceRoot,
+        ...workspaceFixture({
+          id: 'workspace-automation',
+          name: 'Workspace Automation',
+          path: workspaceRoot,
+        }),
       }).run()
       await createProfile(app, 'profile-automation')
       await createAutomation(app)

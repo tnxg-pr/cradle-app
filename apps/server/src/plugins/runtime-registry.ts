@@ -56,9 +56,9 @@ export function classifyPluginSource(
   return {
     kind,
     packageDir,
-    trusted: kind !== 'externalLocal' || isConfiguredExternal,
+    trusted: kind !== 'externalLocal',
     reason: kind === 'externalLocal'
-      ? 'External local plugins run as trusted operator-selected code.'
+      ? 'External local plugins require an operator trust grant before activation.'
       : `Discovered under ${pluginsDir}.`,
   }
 }
@@ -168,6 +168,12 @@ export function setPluginActivationState(owner: string, activation: PluginActiva
   const descriptor = descriptors.get(owner)
   if (!descriptor) { return }
   descriptor.activation = activation
+}
+
+export function setPluginSourceDescriptor(owner: string, source: PluginSourceDescriptor): void {
+  const descriptor = descriptors.get(owner)
+  if (!descriptor) { return }
+  descriptor.source = source
 }
 
 export function setPluginLayerState(

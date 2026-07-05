@@ -4,7 +4,8 @@ import { resolve } from 'node:path'
 import type { PluginManifest } from '@cradle/plugin-sdk'
 import { init, parse } from 'es-module-lexer'
 
-import { getPluginDescriptorByRouteSegment, listPluginDescriptors, setPluginLayerState } from './runtime-registry'
+import { getPluginDescriptorByRouteSegment, listPluginDescriptors, setPluginLayerState, setPluginSourceDescriptor } from './runtime-registry'
+import { evaluatePluginSourceTrust } from './trust-policy'
 
 const sharedDependencyRoutes = {
   'react': 'react.mjs',
@@ -130,7 +131,7 @@ export async function rewritePluginWebBundleImports(source: string, requestUrl: 
 export function createPluginStaticServer(manifests: PluginManifest[]) {
   return {
     manifests,
-    getWebEntry(pluginName: string): string | null {
+    async getWebEntry(pluginName: string): Promise<string | null> {
       const descriptor = getPluginDescriptorByRouteSegment(pluginName)
       if (descriptor?.layers.web.status === 'invalid' || descriptor?.layers.web.status === 'disabled') {
         return null
@@ -139,6 +140,24 @@ export function createPluginStaticServer(manifests: PluginManifest[]) {
         ? manifests.find(m => m.name === descriptor.identity)
         : manifests.find(m => m.name === pluginName)
       if (!manifest?.cradle.web) { return null }
+      if (descriptor) {
+        try {
+          const source = await evaluatePluginSourceTrust({
+            pluginName: descriptor.identity,
+            source: descriptor.source,
+          })
+          setPluginSourceDescriptor(descriptor.identity, source)
+          if (!source.trusted) {
+            setPluginLayerState(descriptor.identity, 'web', 'disabled', source.reason ?? 'Plugin source is not trusted.')
+            return null
+          }
+        }
+        catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          setPluginLayerState(descriptor.identity, 'web', 'failed', message)
+          return null
+        }
+      }
       const entryPath = resolve(manifest.packageDir, manifest.cradle.web)
       if (existsSync(entryPath)) {
         return entryPath

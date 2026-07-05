@@ -43,6 +43,7 @@ const pluginSource = t.Object({
   packageDir: t.String(),
   trusted: t.Boolean(),
   reason: t.Union([t.String(), t.Null()]),
+  checksum: t.Union([t.String(), t.Null()]),
 }, { additionalProperties: false })
 
 const pluginMentionCapability = t.Object({

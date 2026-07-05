@@ -10,6 +10,7 @@ import { createServerApp } from '../src/app'
 import { OPENAPI_DOCS_PATH, OPENAPI_JSON_ALIAS_PATH, OPENAPI_JSON_PATH } from '../src/http/openapi'
 import { REQUEST_ID_HEADER } from '../src/http/request-id'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 
 function makeTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -136,15 +137,15 @@ describe('elysia migration skeleton', () => {
     expect(document.paths['/workspaces']?.post).toBeTruthy()
     expect(document.paths['/workspaces/from-directory']?.post).toBeTruthy()
     expect(document.paths['/workspaces/resolve']?.get).toBeTruthy()
-    expect(document.paths['/workspaces/{id}']?.get).toBeTruthy()
-    expect(document.paths['/workspaces/{id}']?.patch).toBeTruthy()
-    expect(document.paths['/workspaces/{id}']?.delete).toBeTruthy()
-    expect(document.paths['/workspaces/{id}/files']?.get).toBeTruthy()
-    expect(document.paths['/workspaces/{id}/files/children']?.get).toBeTruthy()
-    expect(document.paths['/workspaces/{id}/files/search']?.get).toBeTruthy()
-    expect(document.paths['/workspaces/{id}/files/events']?.get).toBeTruthy()
-    expect(document.paths['/workspaces/{id}/files/content']?.get).toBeTruthy()
-    expect(document.paths['/workspaces/{id}/files/content']?.put).toBeTruthy()
+    expect(document.paths['/workspaces/{workspaceId}']?.get).toBeTruthy()
+    expect(document.paths['/workspaces/{workspaceId}']?.patch).toBeTruthy()
+    expect(document.paths['/workspaces/{workspaceId}']?.delete).toBeTruthy()
+    expect(document.paths['/workspaces/{workspaceId}/files']?.get).toBeTruthy()
+    expect(document.paths['/workspaces/{workspaceId}/files/children']?.get).toBeTruthy()
+    expect(document.paths['/workspaces/{workspaceId}/files/search']?.get).toBeTruthy()
+    expect(document.paths['/workspaces/{workspaceId}/files/events']?.get).toBeTruthy()
+    expect(document.paths['/workspaces/{workspaceId}/files/content']?.get).toBeTruthy()
+    expect(document.paths['/workspaces/{workspaceId}/files/content']?.put).toBeTruthy()
     expect(document.paths['/usage/daily']?.get).toBeTruthy()
     expect(document.paths['/usage/summary']?.get).toBeTruthy()
     expect(document.paths['/usage/stats']?.get).toBeTruthy()
@@ -351,33 +352,35 @@ describe('elysia migration skeleton', () => {
       const created = await createResponse.json() as {
         id: string
         name: string
-        path: string
+        locator: { hostId: string, path: string }
         createdAt: number
         updatedAt: number
       }
       expect(created.name).toBe(basename(workspaceRoot))
+      expect(created.locator).toEqual({ hostId: 'local', path: workspaceRoot })
       expect(created.createdAt).toBeTypeOf('number')
       expect(created.updatedAt).toBeTypeOf('number')
 
       const explicitResponse = await app.handle(new Request('http://localhost/workspaces', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Manual Workspace', path: explicitWorkspaceRoot }),
+        body: JSON.stringify({ name: 'Manual Workspace', locator: { hostId: 'local', path: explicitWorkspaceRoot } }),
       }))
       expect(explicitResponse.status).toBe(200)
       const explicit = await explicitResponse.json() as {
         id: string
         name: string
-        path: string
+        locator: { hostId: string, path: string }
       }
       expect(explicit.name).toBe('Manual Workspace')
+      expect(explicit.locator).toEqual({ hostId: 'local', path: explicitWorkspaceRoot })
 
       const listResponse = await app.handle(new Request('http://localhost/workspaces'))
       expect(listResponse.status).toBe(200)
-      const list = await listResponse.json() as Array<{ id: string, path: string }>
+      const list = await listResponse.json() as Array<{ id: string, locator: { path: string } }>
       expect(list).toEqual(expect.arrayContaining([
-        expect.objectContaining({ id: created.id, path: workspaceRoot }),
-        expect.objectContaining({ id: explicit.id, path: explicitWorkspaceRoot }),
+        expect.objectContaining({ id: created.id, locator: expect.objectContaining({ path: workspaceRoot }) }),
+        expect.objectContaining({ id: explicit.id, locator: expect.objectContaining({ path: explicitWorkspaceRoot }) }),
       ]))
 
       const getResponse = await app.handle(new Request(`http://localhost/workspaces/${created.id}`))
@@ -388,11 +391,11 @@ describe('elysia migration skeleton', () => {
       expect(missingGet.status).toBe(200)
       expect(await missingGet.json()).toBeNull()
 
-      const resolveResponse = await app.handle(new Request(`http://localhost/workspaces/resolve?path=${encodeURIComponent(workspaceRoot)}`))
+      const resolveResponse = await app.handle(new Request(`http://localhost/workspaces/resolve?hostId=local&path=${encodeURIComponent(workspaceRoot)}`))
       expect(resolveResponse.status).toBe(200)
       expect(await resolveResponse.json()).toEqual(expect.objectContaining({ id: created.id }))
 
-      const missingResolve = await app.handle(new Request(`http://localhost/workspaces/resolve?path=${encodeURIComponent('/missing/workspace')}`))
+      const missingResolve = await app.handle(new Request(`http://localhost/workspaces/resolve?hostId=local&path=${encodeURIComponent('/missing/workspace')}`))
       expect(missingResolve.status).toBe(200)
       expect(await missingResolve.json()).toBeNull()
 
@@ -415,13 +418,13 @@ describe('elysia migration skeleton', () => {
       const duplicateResponse = await app.handle(new Request('http://localhost/workspaces', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Dup', path: explicitWorkspaceRoot }),
+        body: JSON.stringify({ name: 'Dup', locator: { hostId: 'local', path: explicitWorkspaceRoot } }),
       }))
       expect(duplicateResponse.status).toBe(409)
       expect(await duplicateResponse.json()).toEqual({
-        code: 'workspace_path_exists',
-        message: 'Workspace path already exists',
-        details: { path: explicitWorkspaceRoot },
+        code: 'workspace_locator_exists',
+        message: 'Workspace locator already exists',
+        details: { locator: { hostId: 'local', path: explicitWorkspaceRoot } },
       })
 
       const deleteCreated = await app.handle(new Request(`http://localhost/workspaces/${created.id}`, {
@@ -779,7 +782,7 @@ describe('elysia migration skeleton', () => {
       const sessionOneId = randomUUID()
       const sessionTwoId = randomUUID()
 
-      d.insert(workspaces).values({ id: workspaceId, name: 'Workspace', path: workspaceRoot }).run()
+      d.insert(workspaces).values(workspaceFixture({ id: workspaceId, name: 'Workspace', path: workspaceRoot })).run()
       d.insert(providerTargets).values([
         { id: providerTargetOneId, kind: 'manual', providerKind: 'openai-compatible', displayName: 'Provider One' },
         { id: providerTargetTwoId, kind: 'manual', providerKind: 'anthropic', displayName: 'Provider Two' },

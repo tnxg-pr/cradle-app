@@ -1,4 +1,4 @@
-import { sessions } from '@cradle/db'
+import { sessions, worktrees } from '@cradle/db'
 import { eq } from 'drizzle-orm'
 
 import { AppError } from '../../errors/app-error'
@@ -10,6 +10,11 @@ import {
 import { getSystemWorkflow } from '../../helpers/system-workflow'
 import { db } from '../../infra'
 import { reportRuntimeSessionTitle } from '../chat-runtime/title-service'
+import {
+  assertWithinAllowedRoots,
+  resolveDirectoryBoundarySync,
+  type ResolvedRootBoundary,
+} from '../filesystem/path-boundary'
 import { runtimeUsesAgentTerminalLaunch } from '../provider-contracts/runtime-compatibility'
 import * as SessionService from '../session/service'
 import * as Workspace from '../workspace/service'
@@ -365,6 +370,7 @@ export function stop(sessionId: string): void {
 }
 
 export function startShell(input: { ptyId: string, cwd: string, cols: number, rows: number }) {
+  const cwd = resolveShellCwd(input.cwd)
   if (!ptyRuntime.isRunning(input.ptyId)) {
     ptyTimeline.reset(input.ptyId)
   }
@@ -374,12 +380,53 @@ export function startShell(input: { ptyId: string, cwd: string, cols: number, ro
     role: 'bottom-panel',
     executable: getDefaultShell(),
     args: [],
-    cwd: input.cwd,
+    cwd,
     cols: input.cols,
     rows: input.rows,
   })
 
   return { ptyId: input.ptyId, running: ptyRuntime.isRunning(input.ptyId) }
+}
+
+function resolveShellCwd(cwd: string): string {
+  const target = resolveDirectoryBoundarySync(cwd, { cwd })
+  const roots = getShellAllowedRoots()
+  assertWithinAllowedRoots({
+    target,
+    roots,
+    code: 'terminal_shell_cwd_outside_allowed_roots',
+    message: 'Shell cwd is outside allowed roots',
+    details: { allowedRoots: roots.map(root => root.requestedPath) },
+  })
+  return target.requestedPath
+}
+
+function getShellAllowedRoots(): ResolvedRootBoundary[] {
+  const workspaceRoots = Workspace.list()
+    .filter(workspace => workspace.locator.hostId === 'local')
+    .map(workspace => workspace.locator.path)
+  const worktreeRoots = db()
+    .select({ path: worktrees.path })
+    .from(worktrees)
+    .where(eq(worktrees.status, 'active'))
+    .all()
+    .map(worktree => worktree.path)
+
+  const roots: ResolvedRootBoundary[] = []
+  const seen = new Set<string>()
+  for (const candidate of [...workspaceRoots, ...worktreeRoots]) {
+    try {
+      const root = resolveDirectoryBoundarySync(candidate, { root: candidate })
+      if (!seen.has(root.realPath)) {
+        seen.add(root.realPath)
+        roots.push(root)
+      }
+    }
+    catch {
+      // Ignore stale workspace or worktree records.
+    }
+  }
+  return roots
 }
 
 export function openShellSocket(input: {

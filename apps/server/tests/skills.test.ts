@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 import type { SkillInventoryEntry } from '../src/modules/skills/skills.store'
 
 interface DiscoveredSkill {
@@ -60,11 +61,11 @@ describe('skills capability', () => {
 
     try {
       app = await createServerApp()
-      db().insert(workspaces).values({
+      db().insert(workspaces).values(workspaceFixture({
         id: 'workspace-1',
         name: 'Workspace One',
         path: workspaceRoot,
-      }).run()
+      })).run()
 
       const createGlobal = await app.handle(new Request('http://localhost/skills', {
         method: 'POST',

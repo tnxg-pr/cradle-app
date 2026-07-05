@@ -32,3 +32,16 @@ export function validatePluginModule(
     throw new PluginLoadError(pluginName, `${layer} entry is not a valid plugin module: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
+
+export function validateMarketplacePackageIntegrity(input: {
+  pluginName: string
+  expectedChecksum: string
+  actualChecksum: string
+}): void {
+  if (input.expectedChecksum !== input.actualChecksum) {
+    throw new PluginLoadError(
+      input.pluginName,
+      `marketplace package checksum mismatch: expected ${input.expectedChecksum}, got ${input.actualChecksum}`,
+    )
+  }
+}

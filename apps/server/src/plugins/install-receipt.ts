@@ -19,6 +19,10 @@ const PluginInstallReceiptSchema = z.object({
   channel: z.string(),
   ref: z.string(),
   originalUrl: z.string().optional(),
+  packageChecksum: z.string()
+    .regex(/^(sha256:)?[a-f0-9]{64}$/)
+    .transform(value => value.startsWith('sha256:') ? value : `sha256:${value}`)
+    .optional(),
   grantedPermissions: z.array(z.string().trim().min(1)).default([]),
 })
 const PluginInstallReceiptJsonSchema = z.string()
@@ -60,6 +64,7 @@ export async function readPluginInstallProvenance(
     channel: receipt.channel,
     ref: receipt.ref,
     originalUrl: receipt.originalUrl,
+    packageChecksum: receipt.packageChecksum,
     grantedPermissions: receipt.grantedPermissions,
   }
 }

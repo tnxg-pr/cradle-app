@@ -156,8 +156,16 @@ const STATUS_RANK: Record<GitFileStatusKind, number> = {
 }
 
 function getWorkspacePath(workspaceId: string): string {
-  const workspacePath = Workspace.getLocalWorkspacePath(workspaceId)
-  if (!workspacePath) {
+  const workspace = Workspace.get(workspaceId)
+  if (!workspace) {
+    throw new AppError({
+      code: 'workspace_not_found',
+      status: 404,
+      message: 'Workspace not found',
+      details: { workspaceId },
+    })
+  }
+  if (workspace.locator.hostId !== 'local') {
     throw new AppError({
       code: 'workspace_local_path_required',
       status: 409,
@@ -165,7 +173,7 @@ function getWorkspacePath(workspaceId: string): string {
       details: { workspaceId },
     })
   }
-  return workspacePath
+  return workspace.locator.path
 }
 
 function resolveGitCwd(workspaceId: string, sessionId?: string | null): string {

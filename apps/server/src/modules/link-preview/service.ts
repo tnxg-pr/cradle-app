@@ -1,7 +1,6 @@
 import type { Static } from 'elysia'
 
-import { fetchWithRetry } from '../../lib/fetch-retry'
-import { resolveSafeFetchTarget } from '../../lib/ssrf-guard'
+import { guardedFetch, resolveSafeFetchTarget } from '../../lib/ssrf-guard'
 import type { LinkPreviewModel } from './model'
 
 export type LinkPreview = Static<typeof LinkPreviewModel['preview']>
@@ -52,14 +51,13 @@ async function fetchPreview(target: { url: string, hostname: string }): Promise<
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
-    const response = await fetchWithRetry(target.url, {
+    const response = await guardedFetch(target.url, {
       headers: {
         'user-agent': USER_AGENT,
         'accept': 'text/html,application/xhtml+xml',
       },
       signal: controller.signal,
-      redirect: 'follow',
-    }, { maxRetries: 1 })
+    }, { maxRedirects: 5 })
 
     if (!response.ok) {
       return emptyPreview(target.url)

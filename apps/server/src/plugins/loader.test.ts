@@ -5,16 +5,21 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { relayHostEnrollments } from '@cradle/db'
 import { Elysia } from 'elysia'
+import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { db } from '../infra'
 import { resolveCodexRuntimeContext } from '../modules/chat-runtime-providers/codex/config/runtime-context'
 import { setAppPreferences } from '../modules/preferences/service'
 import { resetNativeSkillProjectionTargets } from '../modules/skills/native-skill-projection'
 import { setPluginActivationPolicy } from './activation-policy'
 import { activateServerPlugins, deactivateAllPlugins, disablePlugin, enablePlugin } from './loader'
 import { getRegisteredMcpServers } from './mcp-registry'
+import { calculatePluginPackageChecksum } from './package-checksum'
 import { listPluginDescriptors } from './runtime-registry'
+import { deletePluginTrustGrantsForPlugin, grantPluginTrust } from './trust-grants'
 
 let tempPluginsDir: string | undefined
 
@@ -22,6 +27,7 @@ interface PluginPackageOptions {
   contributes?: Record<string, unknown>
   omitContributes?: boolean
   grantedPermissions?: string[]
+  packageChecksum?: string
   provenance?: boolean
   server?: boolean
   web?: boolean
@@ -107,11 +113,18 @@ async function writePluginPackage(options: PluginPackageOptions = {}): Promise<s
         channel: 'bundled',
         ref: 'main',
         originalUrl: 'cradle://plugins/install?source=github',
+        packageChecksum: options.packageChecksum,
         grantedPermissions: options.grantedPermissions,
       }),
     )
   }
   return pluginsRoot
+}
+
+async function grantLoaderCleanupPluginTrust(pluginsRoot: string): Promise<string> {
+  const checksum = await calculatePluginPackageChecksum(join(pluginsRoot, 'cleanup-plugin'))
+  grantPluginTrust('@cradle/loader-cleanup', checksum, 'test trust grant')
+  return checksum
 }
 
 async function writeUnsupportedManifestPackage(): Promise<string> {
@@ -165,6 +178,11 @@ describe('server plugin loader lifecycle', () => {
     await deactivateAllPlugins()
     resetNativeSkillProjectionTargets()
     setPluginActivationPolicy('@cradle/loader-cleanup', { enabled: true, reason: null })
+    deletePluginTrustGrantsForPlugin('@cradle/loader-cleanup')
+    db()
+      .delete(relayHostEnrollments)
+      .where(eq(relayHostEnrollments.id, 'plugin-loader-relay-fixture'))
+      .run()
     delete process.env.CRADLE_PLUGINS_DIR
     delete process.env.CRADLE_PLUGINS_SOURCE_KIND
     delete process.env.CRADLE_EXTERNAL_PLUGINS_DIRS
@@ -270,12 +288,28 @@ describe('server plugin loader lifecycle', () => {
     })
     process.env.CRADLE_PLUGINS_DIR = tempPluginsDir
     process.env.CRADLE_PLUGINS_SOURCE_KIND = 'externalLocal'
+    await grantLoaderCleanupPluginTrust(tempPluginsDir)
 
     await activateServerPlugins(new Elysia())
 
     const descriptor = listPluginDescriptors().find(plugin => plugin.identity === '@cradle/loader-cleanup')
     expect(descriptor?.layers.server.status).toBe('disabled')
     expect(descriptor?.layers.server.error).toContain('Missing required plugin permission grants: test.permission')
+    expect(getRegisteredMcpServers()).not.toHaveProperty('loader-cleanup')
+  })
+
+  it('does not activate external local server plugins without an operator trust grant', async () => {
+    tempPluginsDir = await writePluginPackage()
+    process.env.CRADLE_PLUGINS_DIR = tempPluginsDir
+    process.env.CRADLE_PLUGINS_SOURCE_KIND = 'externalLocal'
+
+    await activateServerPlugins(new Elysia())
+
+    const descriptor = listPluginDescriptors().find(plugin => plugin.identity === '@cradle/loader-cleanup')
+    expect(descriptor?.source.trusted).toBe(false)
+    expect(descriptor?.source.checksum).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(descriptor?.source.reason).toContain('operator trust grant')
+    expect(descriptor?.layers.server.status).toBe('disabled')
     expect(getRegisteredMcpServers()).not.toHaveProperty('loader-cleanup')
   })
 
@@ -297,12 +331,57 @@ describe('server plugin loader lifecycle', () => {
     process.env.CRADLE_PLUGINS_DIR = tempPluginsDir
     process.env.CRADLE_PLUGINS_SOURCE_KIND = 'externalLocal'
     process.env.CRADLE_PLUGIN_ALLOWED_LOADER_CLEANUP_PERMISSIONS = 'test.permission'
+    await grantLoaderCleanupPluginTrust(tempPluginsDir)
 
     await activateServerPlugins(new Elysia())
 
     const descriptor = listPluginDescriptors().find(plugin => plugin.identity === '@cradle/loader-cleanup')
     expect(descriptor?.layers.server.status).toBe('active')
     expect(getRegisteredMcpServers()).toHaveProperty('loader-cleanup')
+  })
+
+  it('records an operator trust grant when enabling an external local plugin', async () => {
+    tempPluginsDir = await writePluginPackage()
+    process.env.CRADLE_PLUGINS_DIR = tempPluginsDir
+    process.env.CRADLE_PLUGINS_SOURCE_KIND = 'externalLocal'
+
+    await activateServerPlugins(new Elysia())
+
+    const discovered = listPluginDescriptors().find(plugin => plugin.identity === '@cradle/loader-cleanup')
+    expect(discovered?.layers.server.status).toBe('disabled')
+
+    const enabled = await enablePlugin('@cradle/loader-cleanup')
+
+    expect(enabled.source.trusted).toBe(true)
+    expect(enabled.layers.server.status).toBe('active')
+    expect(getRegisteredMcpServers()).toHaveProperty('loader-cleanup')
+  })
+
+  it('blocks external local plugins while relay host enrollments expose the server', async () => {
+    tempPluginsDir = await writePluginPackage()
+    process.env.CRADLE_PLUGINS_DIR = tempPluginsDir
+    process.env.CRADLE_PLUGINS_SOURCE_KIND = 'externalLocal'
+    await grantLoaderCleanupPluginTrust(tempPluginsDir)
+    db().insert(relayHostEnrollments).values({
+      id: 'plugin-loader-relay-fixture',
+      displayName: 'Plugin Loader Relay Fixture',
+      relayUrl: 'https://relay.example.test',
+      roomId: 'plugin-loader-relay-room',
+      hostPubkey: 'host-pubkey-plugin-loader-relay-fixture',
+      hostPrivateKeySecretId: 'relay-host-key:plugin-loader-relay-fixture',
+      pinnedControllerPubkey: 'controller-pubkey-plugin-loader-relay-fixture',
+      status: 'paired',
+      pairingCode: null,
+      lastError: null,
+    }).run()
+
+    await activateServerPlugins(new Elysia())
+
+    const descriptor = listPluginDescriptors().find(plugin => plugin.identity === '@cradle/loader-cleanup')
+    expect(descriptor?.source.trusted).toBe(false)
+    expect(descriptor?.source.reason).toContain('relay host enrollments')
+    expect(descriptor?.layers.server.status).toBe('disabled')
+    expect(getRegisteredMcpServers()).not.toHaveProperty('loader-cleanup')
   })
 
   it('does not trust Marketplace receipt grants from ordinary external local directories', async () => {
@@ -324,6 +403,7 @@ describe('server plugin loader lifecycle', () => {
     })
     process.env.CRADLE_PLUGINS_DIR = tempPluginsDir
     process.env.CRADLE_PLUGINS_SOURCE_KIND = 'externalLocal'
+    await grantLoaderCleanupPluginTrust(tempPluginsDir)
 
     await activateServerPlugins(new Elysia())
 
@@ -365,6 +445,23 @@ describe('server plugin loader lifecycle', () => {
     expect(getRegisteredMcpServers()).toHaveProperty('loader-cleanup')
   })
 
+  it('refuses marketplace packages when a provided checksum does not match', async () => {
+    tempPluginsDir = await writePluginPackage({
+      provenance: true,
+      packageChecksum: `sha256:${'0'.repeat(64)}`,
+    })
+    process.env.CRADLE_PLUGINS_DIR = tempPluginsDir
+    process.env.CRADLE_PLUGINS_SOURCE_KIND = 'externalLocal'
+    process.env.CRADLE_MARKETPLACE_PLUGINS_DIR = tempPluginsDir
+
+    await activateServerPlugins(new Elysia())
+
+    const descriptor = listPluginDescriptors().find(plugin => plugin.identity === 'invalid:cleanup-plugin')
+    expect(descriptor?.layers.server.status).toBe('invalid')
+    expect(descriptor?.warnings.join('\n')).toContain('marketplace package checksum mismatch')
+    expect(getRegisteredMcpServers()).not.toHaveProperty('loader-cleanup')
+  })
+
   it('fails external local server plugins that register undeclared runtime capabilities', async () => {
     tempPluginsDir = await writePluginPackage({
       contributes: {
@@ -374,6 +471,7 @@ describe('server plugin loader lifecycle', () => {
     })
     process.env.CRADLE_PLUGINS_DIR = tempPluginsDir
     process.env.CRADLE_PLUGINS_SOURCE_KIND = 'externalLocal'
+    await grantLoaderCleanupPluginTrust(tempPluginsDir)
 
     await activateServerPlugins(new Elysia())
 
@@ -396,6 +494,7 @@ describe('server plugin loader lifecycle', () => {
     })
     process.env.CRADLE_PLUGINS_DIR = tempPluginsDir
     process.env.CRADLE_PLUGINS_SOURCE_KIND = 'externalLocal'
+    await grantLoaderCleanupPluginTrust(tempPluginsDir)
 
     await activateServerPlugins(new Elysia())
 
@@ -427,6 +526,7 @@ describe('server plugin loader lifecycle', () => {
     })
     process.env.CRADLE_PLUGINS_DIR = tempPluginsDir
     process.env.CRADLE_PLUGINS_SOURCE_KIND = 'externalLocal'
+    await grantLoaderCleanupPluginTrust(tempPluginsDir)
 
     const app = new Elysia()
     await activateServerPlugins(app)
@@ -464,6 +564,7 @@ describe('server plugin loader lifecycle', () => {
     process.env.CRADLE_PLUGINS_DIR = tempPluginsDir
     process.env.CRADLE_PLUGINS_SOURCE_KIND = 'externalLocal'
     process.env.CRADLE_PLUGIN_ALLOWED_LOADER_CLEANUP_PERMISSIONS = 'web.permission'
+    await grantLoaderCleanupPluginTrust(tempPluginsDir)
 
     const app = new Elysia()
     await activateServerPlugins(app)

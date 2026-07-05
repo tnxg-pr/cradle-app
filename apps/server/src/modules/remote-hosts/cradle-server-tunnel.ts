@@ -1,7 +1,7 @@
-import { spawn, type ChildProcess } from 'node:child_process'
 import net from 'node:net'
 
 import { AppError } from '../../errors/app-error'
+import { spawnManagedProcess, type ManagedChildProcess } from '../../infra/managed-process'
 import type { RemoteHostSshProfile, SshProfileLaunchConfig } from './service'
 
 export interface RemoteCradleServerTunnelOptions {
@@ -60,8 +60,12 @@ export async function startRemoteCradleServerTunnel(
     `127.0.0.1:${localPort}:${options.remoteHost}:${options.remotePort}`,
     options.sshTarget,
   ]
-  const child = spawn(options.sshExecutable ?? 'ssh', args, {
-    stdio: ['ignore', 'ignore', 'pipe'],
+  const child = spawnManagedProcess({
+    kind: 'spawn',
+    command: options.sshExecutable ?? 'ssh',
+    args,
+    stdin: 'ignore',
+    shutdownGraceMs: 2_000,
   })
   const handle = new NodeRemoteCradleServerTunnelHandle(options.hostId, localPort, child)
   await handle.waitUntilReady(options.readyTimeoutMs ?? 10_000)
@@ -91,7 +95,7 @@ class NodeRemoteCradleServerTunnelHandle implements RemoteCradleServerTunnelHand
   constructor(
     readonly hostId: string,
     readonly localPort: number,
-    private readonly child: ChildProcess,
+    private readonly child: ManagedChildProcess,
   ) {
     child.stderr?.on('data', (chunk: Buffer) => {
       this.stderrBuffer = `${this.stderrBuffer}${chunk.toString('utf8')}`.slice(-16_384)
@@ -117,7 +121,7 @@ class NodeRemoteCradleServerTunnelHandle implements RemoteCradleServerTunnelHand
   }
 
   get pid(): number | null {
-    return this.child.pid ?? null
+    return this.child.targetPid ?? this.child.pid ?? null
   }
 
   get stderr(): string {
@@ -152,20 +156,7 @@ class NodeRemoteCradleServerTunnelHandle implements RemoteCradleServerTunnelHand
     if (this.exited) {
       return
     }
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        if (!this.exited) {
-          this.child.kill('SIGKILL')
-        }
-        resolve()
-      }, 2_000)
-      timeout.unref()
-      this.child.once('exit', () => {
-        clearTimeout(timeout)
-        resolve()
-      })
-      this.child.kill('SIGTERM')
-    })
+    await this.child.stop('SIGTERM')
   }
 }
 

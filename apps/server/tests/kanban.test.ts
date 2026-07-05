@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 
 interface KanbanStatus {
   id: string
@@ -53,12 +54,12 @@ describe('kanban capability', () => {
 
     try {
       app = await createServerApp()
-      db().insert(workspaces).values({
+      db().insert(workspaces).values(workspaceFixture({
         id: 'workspace-kanban',
         name: 'Workspace Kanban',
         identifier: 'KAN',
         path: workspaceRoot,
-      }).run()
+      })).run()
 
       const createBoard = await app.handle(new Request('http://localhost/kanban/boards', {
         method: 'POST',
@@ -275,12 +276,12 @@ describe('kanban capability', () => {
 
     try {
       app = await createServerApp()
-      db().insert(workspaces).values({
+      db().insert(workspaces).values(workspaceFixture({
         id: 'workspace-kanban-agent',
         name: 'Workspace Kanban Agent',
         identifier: 'KAG',
         path: workspaceRoot,
-      }).run()
+      })).run()
       db().insert(providerTargets).values({
         id: 'provider-target-kanban-agent',
         kind: 'manual',
@@ -388,12 +389,12 @@ describe('kanban capability', () => {
 
     try {
       app = await createServerApp()
-      db().insert(workspaces).values({
+      db().insert(workspaces).values(workspaceFixture({
         id: 'workspace-jarvis-comment',
         name: 'Workspace Jarvis Comment',
         identifier: 'JAR',
         path: workspaceRoot,
-      }).run()
+      })).run()
       db().insert(providerTargets).values({
         id: 'provider-target-jarvis-runtime',
         kind: 'manual',
@@ -469,12 +470,12 @@ describe('kanban capability', () => {
 
     try {
       app = await createServerApp()
-      db().insert(workspaces).values({
+      db().insert(workspaces).values(workspaceFixture({
         id: 'workspace-kanban-profile-only',
         name: 'Workspace Kanban Profile Only',
         identifier: 'KPO',
         path: workspaceRoot,
-      }).run()
+      })).run()
       db().insert(providerTargets).values({
         id: 'provider-target-kanban-profile-only',
         kind: 'manual',
@@ -577,18 +578,18 @@ describe('kanban capability', () => {
     try {
       app = await createServerApp()
       db().insert(workspaces).values([
-        {
+        workspaceFixture({
           id: 'workspace-app-one',
           name: 'App One',
           identifier: 'APP',
           path: firstWorkspaceRoot,
-        },
-        {
+        }),
+        workspaceFixture({
           id: 'workspace-app-two',
           name: 'App Two',
           identifier: 'APP',
           path: secondWorkspaceRoot,
-        },
+        }),
       ]).run()
 
       const firstIssueRes = await app.handle(new Request('http://localhost/issues', {
@@ -634,20 +635,18 @@ describe('kanban capability', () => {
     try {
       app = await createServerApp({ startBackgroundTasks: false })
       db().insert(workspaces).values([
-        {
+        workspaceFixture({
           id: 'workspace-source',
           name: 'Source Workspace',
           identifier: 'SRC',
           path: sourceWorkspaceRoot,
-          locatorJson: JSON.stringify({ hostId: 'local', path: sourceWorkspaceRoot }),
-        },
-        {
+        }),
+        workspaceFixture({
           id: 'workspace-target',
           name: 'Target Workspace',
           identifier: 'TGT',
           path: targetWorkspaceRoot,
-          locatorJson: JSON.stringify({ hostId: 'local', path: targetWorkspaceRoot }),
-        },
+        }),
       ]).run()
 
       const sourceStatusesRes = await app.handle(new Request('http://localhost/issues/statuses?workspaceId=workspace-source'))
@@ -752,11 +751,11 @@ describe('kanban capability', () => {
 
     try {
       app = await createServerApp()
-      db().insert(workspaces).values({
+      db().insert(workspaces).values(workspaceFixture({
         id: 'workspace-kanban',
         name: 'Workspace Kanban',
         path: workspaceRoot,
-      }).run()
+      })).run()
 
       const invalidBoard = await app.handle(new Request('http://localhost/kanban/boards', {
         method: 'POST',

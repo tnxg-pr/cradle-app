@@ -22,6 +22,8 @@ interface InfraEnvSnapshot {
   dbPath?: string
   migrationsDir?: string
   logFile?: string
+  authToken?: string
+  authRequired?: string
 }
 
 function readInfraEnv(): InfraEnvSnapshot {
@@ -33,6 +35,8 @@ function readInfraEnv(): InfraEnvSnapshot {
     dbPath: process.env.CRADLE_DB_PATH,
     migrationsDir: process.env.CRADLE_MIGRATIONS_DIR,
     logFile: process.env.CRADLE_LOG_FILE,
+    authToken: process.env.CRADLE_AUTH_TOKEN,
+    authRequired: process.env.CRADLE_AUTH_REQUIRED,
   }
 }
 
@@ -45,6 +49,8 @@ function isSameInfraEnv(a: InfraEnvSnapshot, b: InfraEnvSnapshot): boolean {
     && a.dbPath === b.dbPath
     && a.migrationsDir === b.migrationsDir
     && a.logFile === b.logFile
+    && a.authToken === b.authToken
+    && a.authRequired === b.authRequired
   )
 }
 

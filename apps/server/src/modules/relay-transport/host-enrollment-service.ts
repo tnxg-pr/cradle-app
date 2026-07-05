@@ -14,6 +14,7 @@ import {
 } from '../relay-servers/relay-signature-service'
 import { generateRelayKeyPair, relayPublicKeyFingerprint } from './crypto'
 import { getHostConnectorService, type HostEnrollmentLiveState } from './host-connector'
+import { upsertHostRelayAuthToken } from './relay-auth-token-service'
 
 /**
  * Host-side enrollment service.
@@ -105,6 +106,10 @@ export async function createHostEnrollment(input: CreateHostEnrollmentInput): Pr
   // Persist the private key as a managed secret.
   const secretId = `relay-host-key:${id}`
   const signingSecretId = `relay-host-sign-key:${id}`
+  upsertHostRelayAuthToken({
+    enrollmentId: id,
+    displayName: input.displayName.trim(),
+  })
   upsertSecret({
     id: secretId,
     kind: RELAY_HOST_KEY_SECRET_KIND,

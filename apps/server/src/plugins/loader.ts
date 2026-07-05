@@ -31,9 +31,13 @@ import {
   resetPluginRuntimeRegistry,
   setPluginActivationState,
   setPluginLayerState,
+  setPluginSourceDescriptor,
 } from './runtime-registry'
 import { resetPluginSkillRegistry } from './skill-registry'
 import { createPluginStaticServer, rewritePluginWebBundleImports } from './static-server'
+import { calculatePluginPackageChecksum } from './package-checksum'
+import { grantPluginTrust } from './trust-grants'
+import { evaluatePluginSourceTrust, isExternalLocalCodeSource, readRelayHostExposure } from './trust-policy'
 import { validatePluginModule } from './validation'
 
 interface ActivePlugin {
@@ -110,18 +114,45 @@ function getPluginDiscoverySources(defaultPluginsDir: string): PluginDiscoverySo
   return sources
 }
 
-async function discoverPackagesFromSources(sources: PluginDiscoverySource[]): Promise<PackageWithSource[]> {
+async function discoverPackagesFromSources(
+  sources: PluginDiscoverySource[],
+  options: { relayHostExposed: boolean },
+): Promise<PackageWithSource[]> {
   const packages: PackageWithSource[] = []
   for (const source of sources) {
     const discovered = await discoverPluginPackages(source.pluginsDir)
     for (const pkg of discovered) {
+      const baseSource: PluginSourceDescriptor = {
+        ...classifyPluginSource(pkg.packageDir, source.pluginsDir, source.kind),
+        provenance: pkg.provenance,
+        grantedPermissions: source.trustMarketplaceGrants ? pkg.provenance?.grantedPermissions : undefined,
+      }
+      const pluginName = pkg.manifest?.name ?? `invalid:${basename(pkg.packageDir)}`
+      let trustedSource: PluginSourceDescriptor
+      let trustedPackage = pkg
+      try {
+        trustedSource = await evaluatePluginSourceTrust({
+          pluginName,
+          source: baseSource,
+          relayHostExposed: options.relayHostExposed,
+        })
+      }
+      catch (error) {
+        trustedSource = {
+          ...baseSource,
+          checksum: await calculatePluginPackageChecksum(pkg.packageDir).catch(() => undefined),
+          trusted: false,
+          reason: error instanceof Error ? error.message : String(error),
+        }
+        trustedPackage = {
+          ...pkg,
+          manifest: undefined,
+          error: trustedSource.reason,
+        }
+      }
       packages.push({
-        pkg,
-        source: {
-          ...classifyPluginSource(pkg.packageDir, source.pluginsDir, source.kind),
-          provenance: pkg.provenance,
-          grantedPermissions: source.trustMarketplaceGrants ? pkg.provenance?.grantedPermissions : undefined,
-        },
+        pkg: trustedPackage,
+        source: trustedSource,
       })
     }
   }
@@ -173,11 +204,40 @@ function resetDiscoveredPluginLayers(manifest: PluginManifest): void {
   }
 }
 
-function preparePluginWebLayer(manifest: PluginManifest): void {
+async function refreshPluginSourceTrust(manifest: PluginManifest): Promise<PluginSourceDescriptor | null> {
+  const descriptor = getPluginDescriptor(manifest.name)
+  if (!descriptor) { return null }
+  try {
+    const source = await evaluatePluginSourceTrust({
+      pluginName: descriptor.identity,
+      source: descriptor.source,
+    })
+    setPluginSourceDescriptor(descriptor.identity, source)
+    return source
+  }
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const source = {
+      ...descriptor.source,
+      trusted: false,
+      reason: message,
+    }
+    setPluginSourceDescriptor(descriptor.identity, source)
+    markPluginLayersDisabled(manifest, message)
+    return source
+  }
+}
+
+async function preparePluginWebLayer(manifest: PluginManifest): Promise<void> {
   if (!manifest.cradle.web) { return }
   const descriptor = getPluginDescriptor(manifest.name)
   if (!descriptor || descriptor.layers.web.status === 'invalid') { return }
   setPluginLayerState(manifest.name, 'web', 'discovered')
+  const source = await refreshPluginSourceTrust(manifest)
+  if (source && !source.trusted) {
+    setPluginLayerState(manifest.name, 'web', 'disabled', source.reason ?? 'Plugin source is not trusted.')
+    return
+  }
   const entryPath = resolve(manifest.packageDir, manifest.cradle.web)
   if (!existsSync(entryPath)) {
     setPluginLayerState(manifest.name, 'web', 'failed', `Web entry is missing: ${manifest.cradle.web}`)
@@ -222,6 +282,15 @@ async function activatePluginServerLayer(manifest: PluginManifest): Promise<void
   const descriptor = getPluginDescriptor(manifest.name)
   if (!descriptor || descriptor.layers.server.status === 'invalid') { return }
   if (activePlugins.has(manifest.name)) { return }
+  const source = await refreshPluginSourceTrust(manifest)
+  if (source && !source.trusted) {
+    setPluginLayerState(manifest.name, 'server', 'disabled', source.reason ?? 'Plugin source is not trusted.')
+    logger.warn('plugin server layer disabled by source trust policy', {
+      plugin: manifest.name,
+      reason: source.reason,
+    })
+    return
+  }
 
   const permissionDecision = evaluatePluginPermissionPolicy(descriptor, 'server', process.env)
   if (!permissionDecision.allowed) {
@@ -272,7 +341,9 @@ export async function activateServerPlugins(app: Elysia): Promise<void> {
   const thisDir = dirname(fileURLToPath(import.meta.url))
   const pluginsDir = process.env.CRADLE_PLUGINS_DIR
     ?? resolve(thisDir, '../../../../plugins')
-  const packages = await discoverPackagesFromSources(getPluginDiscoverySources(pluginsDir))
+  const packages = await discoverPackagesFromSources(getPluginDiscoverySources(pluginsDir), {
+    relayHostExposed: readRelayHostExposure(),
+  })
   resetPluginRuntimeRegistry()
   resetPluginRouteRegistry()
   resetExternalProviderSourceRegistry()
@@ -302,7 +373,7 @@ export async function activateServerPlugins(app: Elysia): Promise<void> {
       markPluginLayersDisabled(manifest, toDisabledReason(descriptor.activation.reason))
       continue
     }
-    preparePluginWebLayer(manifest)
+    await preparePluginWebLayer(manifest)
   }
 
   for (const manifest of manifests) {
@@ -330,7 +401,7 @@ export async function activateServerPlugins(app: Elysia): Promise<void> {
       })
     })
     .get('/:name/web.mjs', async ({ params, request, set }) => {
-      const entryPath = staticServer.getWebEntry(params.name)
+      const entryPath = await staticServer.getWebEntry(params.name)
       if (!entryPath) {
         set.status = 404
         return 'Not found'
@@ -421,6 +492,14 @@ export async function disablePlugin(pluginName: string, reason?: string): Promis
 export async function enablePlugin(pluginName: string): Promise<PluginDescriptor> {
   const descriptor = requirePluginDescriptor(pluginName)
   const manifest = requirePluginManifest(descriptor.identity)
+  if (isExternalLocalCodeSource(descriptor.source)) {
+    const checksum = await calculatePluginPackageChecksum(manifest.packageDir)
+    grantPluginTrust(descriptor.identity, checksum, 'Enabled by operator.')
+    setPluginSourceDescriptor(descriptor.identity, {
+      ...descriptor.source,
+      checksum,
+    })
+  }
   const policy = setPluginActivationPolicy(descriptor.identity, {
     enabled: true,
     reason: null,
@@ -433,7 +512,7 @@ export async function enablePlugin(pluginName: string): Promise<PluginDescriptor
 
   await deactivatePluginServerLayer(descriptor.identity)
   resetDiscoveredPluginLayers(manifest)
-  preparePluginWebLayer(manifest)
+  await preparePluginWebLayer(manifest)
   await activatePluginServerLayer(manifest)
   return requirePluginDescriptor(descriptor.identity)
 }

@@ -8,6 +8,7 @@ export const agentCredentials = sqliteTable('agent_credentials', {
   kind: text('kind').notNull(),
   label: text('label').notNull(),
   encryptedSecret: text('encrypted_secret').notNull(),
+  keyVersion: int('key_version').default(1),
   ...timestamps(),
 })
 

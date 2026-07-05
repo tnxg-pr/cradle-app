@@ -174,23 +174,14 @@ describe('preferences capability', () => {
       }))
 
       expect(enableRes.status).toBe(200)
-      for (const providerRoot of ['.codex', '.claude']) {
-        expect(existsSync(join(
-          dataDir,
-          providerRoot,
-          'skills',
-          'cradle',
-          'plugin-native-enable-plugin-demo',
-          'SKILL.md',
-        ))).toBe(true)
-        expect(existsSync(join(
-          dataDir,
-          providerRoot,
-          'skills',
-          'cradle',
-          'native-enable-builtin-demo',
-          'SKILL.md',
-        ))).toBe(true)
+      const expectedProjectionPaths = [
+        join(dataDir, '.codex', 'skills', 'cradle', 'plugin-native-enable-plugin-demo', 'SKILL.md'),
+        join(dataDir, '.codex', 'skills', 'cradle', 'native-enable-builtin-demo', 'SKILL.md'),
+        join(dataDir, '.claude', 'skills', 'cradle-plugin-native-enable-plugin-demo', 'SKILL.md'),
+        join(dataDir, '.claude', 'skills', 'cradle-native-enable-builtin-demo', 'SKILL.md'),
+      ]
+      for (const projectionPath of expectedProjectionPaths) {
+        expect(existsSync(projectionPath)).toBe(true)
       }
     }
     finally {

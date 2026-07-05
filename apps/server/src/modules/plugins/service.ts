@@ -58,6 +58,7 @@ export interface PluginSourceView {
   packageDir: string
   trusted: boolean
   reason: string | null
+  checksum: string | null
 }
 
 export interface PluginCapabilityView {
@@ -280,6 +281,7 @@ export function toPluginDescriptorView(descriptor: PluginDescriptor): PluginDesc
       packageDir: descriptor.source.packageDir,
       trusted: descriptor.source.trusted,
       reason: descriptor.source.reason ?? null,
+      checksum: descriptor.source.checksum ?? null,
     },
     activation: toActivationView(descriptor.activation),
     layers: {

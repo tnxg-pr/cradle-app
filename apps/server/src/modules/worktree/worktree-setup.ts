@@ -9,10 +9,23 @@ interface WorktreesJson {
   setup?: Record<string, string[]>
 }
 
+export interface WorktreeSetupHookTrustDecision {
+  trusted: boolean
+  relayExposed: boolean
+}
+
+function skippedHookWarning(commands: string[], reason: string): string {
+  return [
+    reason,
+    `Skipped setup commands: ${commands.join('; ')}`,
+  ].join(' ')
+}
+
 /** Runs optional `.cradle/worktrees.json` hooks after checkout creation (Cursor-style). */
 export async function runWorktreeSetupHooks(
   workspacePath: string,
   checkoutPath: string,
+  trust: WorktreeSetupHookTrustDecision,
 ): Promise<string[]> {
   const configPath = join(workspacePath, '.cradle', 'worktrees.json')
   if (!existsSync(configPath)) {
@@ -30,6 +43,20 @@ export async function runWorktreeSetupHooks(
   const platformKey = process.platform
   const commands = config.setup?.[platformKey] ?? config.setup?.default ?? []
   const warnings: string[] = []
+
+  if (commands.length > 0 && trust.relayExposed) {
+    return [skippedHookWarning(
+      commands,
+      'Worktree setup hooks were not executed because relay host enrollments expose this server.',
+    )]
+  }
+
+  if (commands.length > 0 && !trust.trusted) {
+    return [skippedHookWarning(
+      commands,
+      'Worktree setup hooks require explicit workspace trust before execution.',
+    )]
+  }
 
   for (const command of commands) {
     try {

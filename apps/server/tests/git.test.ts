@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 import {
   addGitWorktree,
   getHeadSha,
@@ -120,6 +121,7 @@ function commitFile(dir: string, fileName: string, content: string, message: str
 
 function createGitWorkspaceFixture(dir: string): void {
   initGitRepository(dir)
+  commitFile(dir, '.gitignore', '.cradle/', 'repo: ignore Cradle worktrees')
   commitFile(dir, 'README.md', '# Git Fixture', 'repo: initial commit')
   commitFile(dir, 'main.txt', 'main branch content', 'main: second commit')
   runGit(dir, ['checkout', '-b', 'seed-branch'])
@@ -141,11 +143,11 @@ describe('git capability', () => {
       app = await createServerApp()
       db()
         .insert(workspaces)
-        .values({
+        .values(workspaceFixture({
           id: 'workspace-git',
           name: 'Workspace Git',
           path: workspaceRoot,
-        })
+        }))
         .run()
 
       const statusRes = await app.handle(
@@ -237,11 +239,11 @@ describe('git capability', () => {
       app = await createServerApp()
       db()
         .insert(workspaces)
-        .values({
+        .values(workspaceFixture({
           id: 'workspace-git',
           name: 'Workspace Git',
           path: workspaceRoot,
-        })
+        }))
         .run()
 
       const createBranchRes = await app.handle(
@@ -308,11 +310,11 @@ describe('git capability', () => {
       app = await createServerApp()
       db()
         .insert(workspaces)
-        .values({
+        .values(workspaceFixture({
           id: 'workspace-multi-git',
           name: 'Workspace Multi Git',
           path: workspaceRoot,
-        })
+        }))
         .run()
 
       const repositoriesRes = await app.handle(
@@ -405,11 +407,11 @@ describe('git capability', () => {
       app = await createServerApp()
       db()
         .insert(workspaces)
-        .values({
+        .values(workspaceFixture({
           id: 'workspace-plain',
           name: 'Workspace Plain',
           path: plainWorkspaceRoot,
-        })
+        }))
         .run()
 
       const missingWorkspace = await app.handle(

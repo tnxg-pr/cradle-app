@@ -10,8 +10,10 @@ import { db } from '../../infra'
 import { createChildLogger } from '../../logging/logger'
 import { readSecret, upsertSecret } from '../secrets/service'
 import { relayAssertionHeaders, signRelayAssertion } from '../relay-servers/relay-signature-service'
+import { CRADLE_RELAY_TOKEN_HEADER } from '../../http/auth'
 import { loadPrivateKeyBytes, publicKeyFromPrivate } from './crypto'
 import { relayEnvelopeSchema, type RelayEnvelope } from './protocol'
+import { readOrCreateHostRelayAuthToken } from './relay-auth-token-service'
 import { RelaySession } from './session'
 
 const logger = createChildLogger({ module: 'relay-host-connector' })
@@ -52,6 +54,7 @@ export interface HostEnrollmentLiveState {
 interface ActiveStream {
   socket: net.Socket
   streamId: string
+  requestWriter: RelayHttpRequestWriter
 }
 
 class HostConnection {
@@ -227,7 +230,7 @@ class HostConnection {
               learnedControllerSigningPubkey = info.signingPubkey
             }
           },
-          onStreamOpen: (streamId) => this.openLocalStream(streamId),
+          onStreamOpen: (streamId) => this.openLocalStream(streamId, enrollment.relayAuthToken),
           onStreamData: (streamId, data) => this.handleStreamData(streamId, data),
           onStreamClose: (streamId) => this.handleStreamClose(streamId),
           onPeerClosed: () => drop(new Error('controller peer closed')),
@@ -253,13 +256,18 @@ class HostConnection {
     })
   }
 
-  private openLocalStream(streamId: string): void {
+  private openLocalStream(streamId: string, relayAuthToken: string): void {
     const session = this.session
     if (!session) {
       return
     }
     const socket = net.connect({ host: this.config.localServerHost, port: this.config.localServerPort })
-    this.streams.set(streamId, { socket, streamId })
+    const requestWriter = new RelayHttpRequestWriter(socket, relayAuthToken, () => {
+      session.closeStream(streamId, 'invalid relay HTTP request')
+      socket.destroy()
+      this.streams.delete(streamId)
+    })
+    this.streams.set(streamId, { socket, streamId, requestWriter })
 
     socket.on('data', (chunk: Buffer) => {
       session.writeStreamData(streamId, new Uint8Array(chunk))
@@ -279,11 +287,7 @@ class HostConnection {
     if (!stream) {
       return
     }
-    stream.socket.write(Buffer.from(data), (error) => {
-      if (error) {
-        stream.socket.destroy()
-      }
-    })
+    stream.requestWriter.write(data)
   }
 
   private handleStreamClose(streamId: string): void {
@@ -321,6 +325,7 @@ interface HostEnrollmentRecord {
   hostSigningPrivateKey: string
   pinnedControllerPubkey: string | null
   pairingCode: string | null
+  relayAuthToken: string
 }
 
 export class HostConnectorService {
@@ -365,6 +370,10 @@ export class HostConnectorService {
         hostSigningPrivateKey: readHostSigningPrivateKey(row.id),
         pinnedControllerPubkey: row.pinnedControllerPubkey,
         pairingCode: row.pairingCode,
+        relayAuthToken: readOrCreateHostRelayAuthToken({
+          enrollmentId: row.id,
+          displayName: row.displayName,
+        }),
       }
     }
     const onPaired = (controllerPubkey: string, controllerSigningPubkey: string) => {
@@ -458,6 +467,91 @@ function readHostControllerSigningPubkey(enrollmentId: string): string {
 
 function hostControllerSigningPubkeySecretId(enrollmentId: string): string {
   return `relay-host-controller-sign-pubkey:${enrollmentId}`
+}
+
+const MAX_RELAY_HTTP_HEADER_BYTES = 64 * 1024
+
+class RelayHttpRequestWriter {
+  private buffered: Buffer[] = []
+  private bufferedLength = 0
+  private released = false
+
+  constructor(
+    private readonly socket: net.Socket,
+    private readonly relayAuthToken: string,
+    private readonly reject: () => void,
+  ) {}
+
+  write(data: Uint8Array): void {
+    if (this.released) {
+      this.writeToSocket(Buffer.from(data))
+      return
+    }
+
+    const chunk = Buffer.from(data)
+    this.buffered.push(chunk)
+    this.bufferedLength += chunk.byteLength
+    if (this.bufferedLength > MAX_RELAY_HTTP_HEADER_BYTES) {
+      this.reject()
+      return
+    }
+
+    const buffered = Buffer.concat(this.buffered, this.bufferedLength)
+    const headerEnd = buffered.indexOf('\r\n\r\n')
+    if (headerEnd < 0) {
+      return
+    }
+
+    const headerBlock = buffered.subarray(0, headerEnd).toString('latin1')
+    const rewrittenHeader = rewriteRelayHttpRequestHead(headerBlock, this.relayAuthToken)
+    if (!rewrittenHeader) {
+      this.reject()
+      return
+    }
+
+    this.released = true
+    this.buffered = []
+    this.bufferedLength = 0
+    const body = buffered.subarray(headerEnd + 4)
+    this.writeToSocket(Buffer.concat([
+      Buffer.from(`${rewrittenHeader}\r\n\r\n`, 'latin1'),
+      body,
+    ]))
+  }
+
+  private writeToSocket(data: Buffer): void {
+    this.socket.write(data, (error) => {
+      if (error) {
+        this.socket.destroy()
+      }
+    })
+  }
+}
+
+export function rewriteRelayHttpRequestHead(headerBlock: string, relayAuthToken: string): string | null {
+  const lines = headerBlock.split('\r\n')
+  const requestLine = lines[0]
+  if (!requestLine || !/^[A-Z!#$%&'*+.^_`|~-]+ [^\s]+ HTTP\/1\.[01]$/.test(requestLine)) {
+    return null
+  }
+
+  const headers = lines.slice(1).filter((line) => {
+    const lower = line.toLowerCase()
+    return !lower.startsWith(`${CRADLE_RELAY_TOKEN_HEADER}:`)
+      && !lower.startsWith('connection:')
+  })
+  const isUpgrade = lines.slice(1).some((line) => {
+    const lower = line.toLowerCase()
+    return lower.startsWith('upgrade:')
+      || (lower.startsWith('connection:') && lower.includes('upgrade'))
+  })
+
+  return [
+    requestLine,
+    ...headers,
+    `${CRADLE_RELAY_TOKEN_HEADER}: ${relayAuthToken}`,
+    ...(isUpgrade ? [] : ['Connection: close']),
+  ].join('\r\n')
 }
 
 // Re-export for callers (e.g. enrollment service) that need to load the key.

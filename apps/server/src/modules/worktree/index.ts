@@ -38,6 +38,7 @@ export const worktree = new Elysia({
         sourceWorkspaceId: params.workspaceId,
         sessionId: body.sessionId,
         slug: body.slug ?? 'isolated',
+        confirmedSetupHooks: body.confirmedSetupHooks === true,
       })
       if (body.bindSession !== false) {
         Worktree.attachSessionToWorktree({
@@ -59,6 +60,7 @@ export const worktree = new Elysia({
         sessionId: t.String({ minLength: 1 }),
         slug: t.Optional(t.String({ minLength: 1 })),
         bindSession: t.Optional(t.Boolean()),
+        confirmedSetupHooks: t.Optional(t.Boolean()),
       }),
       response: { 200: WorktreeModel.worktreeView },
     })

@@ -171,7 +171,7 @@ plugins/
 
 ### Permission Enforcement
 
-`cradle.contributes.permissions` is enforced during host activation for external local plugins. Workspace development plugins and bundled resource plugins are trusted by source policy. For `externalLocal` plugins, every required permission for the layer must be granted by the operator or by Cradle Marketplace install consent from a Cradle-owned installed plugin directory.
+`cradle.contributes.permissions` is enforced during host activation for external local plugins. Workspace development plugins and bundled resource plugins are trusted by source policy. For `externalLocal` plugins, the package checksum must first match a stored operator trust grant, and every required permission for the layer must be granted by the operator or by Cradle Marketplace install consent from a Cradle-owned installed plugin directory.
 
 Operator grants use these environment variables:
 
@@ -185,6 +185,8 @@ CRADLE_PLUGIN_ALLOWED_MY_PLUGIN_PERMISSIONS=network.local
 Marketplace install consent records the manifest-derived required permission ids in the install receipt. That receipt is displayed as provenance for any matching package, but it becomes an activation grant only when the host projects it from the Cradle-owned Marketplace installed plugin directory. A copied or hand-written receipt in an arbitrary external plugin directory does not grant permissions.
 
 If a required permission is missing, the host marks that layer `disabled`. Server and desktop entries do not call `activate()`. Web entries are not served from `/api/plugins/{routeSegment}/web.mjs` and the renderer does not import them.
+
+External local trust is bound to the package checksum. If package contents change, the host disables the plugin until the operator enables that exact package revision again. External local plugins are also blocked while relay host enrollments expose the server.
 
 ### Host Activation vs Plugin Settings
 
@@ -1023,6 +1025,7 @@ interface PluginSourceDescriptor {
   packageDir: string
   trusted: boolean
   reason?: string
+  checksum?: string
   provenance?: PluginSourceProvenance
 }
 
@@ -1038,6 +1041,7 @@ interface PluginSourceProvenance {
   channel: string
   ref: string
   originalUrl?: string
+  packageChecksum?: string
 }
 
 interface CradlePluginMeta {

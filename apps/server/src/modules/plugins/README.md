@@ -12,4 +12,6 @@ This module owns host activation APIs. Host activation means Cradle decides whet
 - `GET /plugins/mentions` lists plugin mention candidates for the chat composer. It reads plugin descriptors and capabilities from Cradle's plugin registry; it does not read from or write to MCP registry state.
 - `GET /plugins/:routeSegment/icon` reads a plugin-owned package-relative icon declared by `cradle.icon`.
 
+Enabling an `externalLocal` plugin also records an operator trust grant for the currently discovered package checksum. The grant is host policy, not plugin-owned settings. If the package contents change, the checksum changes and Cradle disables the plugin until the operator enables that exact package revision again. External local plugins remain blocked while relay host enrollments expose the server.
+
 Plugin-owned runtime routes are not stable host APIs. They are dispatched under `/api/plugins/:routeSegment/...` by the plugin host so web plugins can call their own server handlers through `ctx.routes`.

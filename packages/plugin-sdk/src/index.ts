@@ -89,6 +89,7 @@ export interface PluginSourceDescriptor {
   packageDir: string
   trusted: boolean
   reason?: string
+  checksum?: string
   provenance?: PluginSourceProvenance
   grantedPermissions?: string[]
 }
@@ -105,6 +106,7 @@ export interface PluginSourceProvenance {
   channel: string
   ref: string
   originalUrl?: string
+  packageChecksum?: string
   grantedPermissions?: string[]
 }
 

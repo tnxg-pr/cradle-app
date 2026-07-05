@@ -12,6 +12,7 @@ encrypt the inner stream end to end.
 - host-side enrollments in `relay_host_enrollments`.
 - host-side X25519 key generation and private-key secret references.
 - host-side Ed25519 relay assertion signing keys stored as sibling secrets.
+- host-side relay-scoped HTTP auth tokens stored as sibling secrets.
 - the always-on host connector that maintains `/ws/host` connections to relayd.
 - the controller-side local TCP listener used by `remote-hosts`.
 - the encrypted inner protocol, stream multiplexing, and flow control.
@@ -71,6 +72,14 @@ the controller `hello` metadata. The host stores it as a sibling secret so
 `POST /rooms/host-session` can restore relayd's in-memory controller
 authorization after relayd restarts. This keeps existing X25519 pinning fields
 unchanged and avoids a database migration.
+
+Each host enrollment also has a relay-scoped HTTP auth token stored as a managed
+system secret. The token is not exposed through enrollment read APIs. When a
+controller opens a tunneled stream, the host connector rewrites the first
+HTTP/1 request header on that local TCP stream to include
+`x-cradle-relay-token`. The server auth boundary accepts that token only while
+the enrollment row still exists, so deleting the enrollment revokes the tunneled
+credential even if the managed secret remains on disk.
 
 ## Runtime Tunnel
 

@@ -33,4 +33,15 @@ export const SecretsModel = {
     label: t.String({ minLength: 1 }),
     secret: t.String({ minLength: 1 }),
   }),
+
+  rotateBody: t.Object({
+    from: t.String({ minLength: 1 }),
+    to: t.String({ minLength: 1 }),
+  }),
+
+  rotateResult: t.Object({
+    rotated: t.Number(),
+    fromVersion: t.Number(),
+    toVersion: t.Number(),
+  }),
 }

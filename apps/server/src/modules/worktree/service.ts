@@ -30,6 +30,11 @@ import {
   type WorktreeHealth,
 } from './worktree-reconcile'
 import { runWorktreeSetupHooks } from './worktree-setup'
+import {
+  grantWorktreeSetupHookTrust,
+  hasWorktreeSetupHookTrust,
+  isRelayHostExposed,
+} from './worktree-setup-trust'
 
 const BRANCH_PREFIX = 'cradle/wt/'
 
@@ -379,7 +384,10 @@ async function recreateWorktreeCheckout(worktree: Worktree, workspacePath: strin
     }).where(eq(worktrees.id, worktree.id)).run()
   }
 
-  await runWorktreeSetupHooks(workspacePath, checkoutPath)
+  await runWorktreeSetupHooks(workspacePath, checkoutPath, {
+    trusted: hasWorktreeSetupHookTrust(worktree.sourceWorkspaceId),
+    relayExposed: isRelayHostExposed(),
+  })
   return checkoutPath
 }
 
@@ -430,6 +438,7 @@ export async function createWorktree(input: {
   sourceWorkspaceId: string
   sessionId: string
   slug: string
+  confirmedSetupHooks?: boolean
 }): Promise<WorktreeView> {
   const workspacePath = Workspace.getLocalWorkspacePath(input.sourceWorkspaceId)
   if (!workspacePath) {
@@ -454,7 +463,13 @@ export async function createWorktree(input: {
     branch,
     baseRef,
   })
-  await runWorktreeSetupHooks(workspacePath, absolutePath)
+  if (input.confirmedSetupHooks === true) {
+    grantWorktreeSetupHookTrust(input.sourceWorkspaceId, 'Confirmed during worktree creation.')
+  }
+  await runWorktreeSetupHooks(workspacePath, absolutePath, {
+    trusted: hasWorktreeSetupHookTrust(input.sourceWorkspaceId),
+    relayExposed: isRelayHostExposed(),
+  })
 
   const timestamp = now()
   const id = randomUUID()

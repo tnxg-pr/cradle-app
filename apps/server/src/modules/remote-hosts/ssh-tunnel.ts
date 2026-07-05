@@ -1,6 +1,7 @@
-import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
+
+import { spawnManagedProcess, type ManagedChildProcess } from '../../infra/managed-process'
 
 export interface SshTunnelOptions {
   hostId: string
@@ -45,8 +46,12 @@ export async function startSshTunnel(options: SshTunnelOptions): Promise<SshTunn
     `${options.localSocketPath}:${options.remoteSocketPath}`,
     options.sshTarget,
   ]
-  const child = spawn(options.sshExecutable ?? 'ssh', args, {
-    stdio: ['ignore', 'ignore', 'pipe'],
+  const child = spawnManagedProcess({
+    kind: 'spawn',
+    command: options.sshExecutable ?? 'ssh',
+    args,
+    stdin: 'ignore',
+    shutdownGraceMs: 2_000,
   })
 
   const handle = new NodeSshTunnelHandle(options, child)
@@ -63,7 +68,7 @@ class NodeSshTunnelHandle implements SshTunnelHandle {
 
   constructor(
     private readonly options: SshTunnelOptions,
-    private readonly child: ChildProcess,
+    private readonly child: ManagedChildProcess,
   ) {
     child.stderr?.on('data', (chunk: Buffer) => {
       this.stderrBuffer = `${this.stderrBuffer}${chunk.toString('utf8')}`.slice(-16_384)
@@ -101,7 +106,7 @@ class NodeSshTunnelHandle implements SshTunnelHandle {
   }
 
   get pid(): number | null {
-    return this.child.pid ?? null
+    return this.child.targetPid ?? this.child.pid ?? null
   }
 
   get stderr(): string {
@@ -134,20 +139,7 @@ class NodeSshTunnelHandle implements SshTunnelHandle {
     if (this.exited) {
       return
     }
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        if (!this.exited) {
-          this.child.kill('SIGKILL')
-        }
-        resolve()
-      }, 2_000)
-      timeout.unref()
-      this.child.once('exit', () => {
-        clearTimeout(timeout)
-        resolve()
-      })
-      this.child.kill('SIGTERM')
-    })
+    await this.child.stop('SIGTERM')
   }
 
   private formatExitBeforeReady(): string {

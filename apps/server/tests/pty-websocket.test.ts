@@ -11,6 +11,7 @@ import { z } from 'zod'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 import type { PtyServerEvent } from '../src/modules/pty/protocol'
 
 type ElysiaApp = Awaited<ReturnType<typeof createServerApp>>
@@ -57,6 +58,10 @@ function makeTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
 
+function insertWorkspace(id: string, name: string, path: string): void {
+  db().insert(workspaces).values(workspaceFixture({ id, name, path })).run()
+}
+
 async function getAvailablePort(): Promise<number> {
   return await new Promise((resolve, reject) => {
     const server = createServer()
@@ -81,11 +86,7 @@ async function getAvailablePort(): Promise<number> {
 async function createCliTuiSession(baseUrl: string, workspaceRoot: string) {
   const _baseUrl = baseUrl
   void _baseUrl
-  db().insert(workspaces).values({
-    id: 'workspace-pty',
-    name: 'Workspace Pty',
-    path: workspaceRoot,
-  }).run()
+  insertWorkspace('workspace-pty', 'Workspace Pty', workspaceRoot)
 
   insertAgentRow({
     id: 'agent-cli-tui',
@@ -383,6 +384,7 @@ describe('pty websocket live channels', () => {
     try {
       const started = await startServerApp()
       app = started.app
+      insertWorkspace('workspace-shell-explicit-delete', 'Workspace Shell Explicit Delete', workspaceRoot)
 
       const startRes = await fetch(`${started.baseUrl}/terminal-sessions/shell/start`, {
         method: 'POST',
@@ -438,6 +440,7 @@ describe('pty websocket live channels', () => {
     try {
       const started = await startServerApp()
       app = started.app
+      insertWorkspace('workspace-shell-lease-expiry', 'Workspace Shell Lease Expiry', workspaceRoot)
 
       const startRes = await fetch(`${started.baseUrl}/terminal-sessions/shell/start`, {
         method: 'POST',

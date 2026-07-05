@@ -57,6 +57,7 @@ export const WorktreeModel = {
   createBody: t.Object({
     sessionId: t.String({ minLength: 1 }),
     slug: t.Optional(t.String({ minLength: 1 })),
+    confirmedSetupHooks: t.Optional(t.Boolean()),
   }),
 
   cleanupBody: t.Object({

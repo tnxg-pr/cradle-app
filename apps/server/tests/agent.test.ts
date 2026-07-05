@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { calculatePluginPackageChecksum } from '../src/plugins/package-checksum'
+import { grantPluginTrust } from '../src/plugins/trust-grants'
 
 function makeTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -28,6 +30,11 @@ function buildAvatarUrl(style: string, seed: string): string {
 
 function repoPluginsDir(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), '../../../plugins')
+}
+
+async function grantCcSwitchPluginTrust(): Promise<void> {
+  const packageDir = join(repoPluginsDir(), 'cc-switch')
+  grantPluginTrust('@cradle/cc-switch', await calculatePluginPackageChecksum(packageDir), 'test trust grant')
 }
 
 function writeCcSwitchOnboardingDatabase(path: string): void {
@@ -816,6 +823,7 @@ describe('agent identity capability', () => {
       setEnv('CRADLE_LOCAL_AGENT_CONFIG_CODEX_AUTH_PATH', codexAuthPath, previousEnv)
       setEnv('CRADLE_LOCAL_AGENT_CONFIG_INCLUDE_PROCESS_ENV', 'false', previousEnv)
       setEnv('PATH', '', previousEnv)
+      await grantCcSwitchPluginTrust()
 
       app = await createServerApp({ startBackgroundTasks: false })
       const previewRes = await app.handle(new Request('http://localhost/agents/import/local-config/preview', {

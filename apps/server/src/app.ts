@@ -3,6 +3,7 @@ import { node } from '@elysiajs/node'
 import { Elysia } from 'elysia'
 
 import { createOpenApiPlugin, registerOpenApiAlias } from './http/openapi'
+import { createAuthPlugin } from './http/auth'
 import { createRequestIdPlugin } from './http/request-id'
 import { acp } from './modules/acp'
 import { agentIdentity } from './modules/agent-identity'
@@ -117,6 +118,7 @@ export async function createServerContractApp(options: CreateServerContractAppOp
     })
   )
   app.use(createRequestIdPlugin())
+  app.use(createAuthPlugin())
   if (includeRuntimeHttpPlugins) {
     const [{ createRequestLoggerPlugin }, { createErrorHandler }] = await Promise.all([
       import('./http/request-logger'),
@@ -283,8 +285,12 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     void startOpencodeServer().catch((error) => {
       console.error('[opencode] shared server warm-start failed:', error)
     })
-    void conversationBridgeSupervisor.startEnabledConversationBridgeConnections()
-    void localRelaydSupervisor.startManagedLocalRelayd()
+    void conversationBridgeSupervisor.startEnabledConversationBridgeConnections().catch((error) => {
+      console.error('[conversation-bridge] start enabled connections failed:', error)
+    })
+    void localRelaydSupervisor.startManagedLocalRelayd().catch((error) => {
+      console.error('[relay-servers] managed relayd warm-start failed:', error)
+    })
     // Start the always-on relay host-connector for any existing enrollments.
     // Each enrollment maintains its own /ws/host connection with backoff.
     try {

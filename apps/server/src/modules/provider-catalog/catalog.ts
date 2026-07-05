@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { AppError } from '../../errors/app-error'
+import { guardedFetch } from '../../lib/ssrf-guard'
 import { CodexChatgptAuthReauthRequiredError, readCodexChatgptAuthCredential } from '../chat-runtime-providers/codex/app-server/chatgpt-auth'
 import {
   listCodexApiKeyModels,
@@ -33,6 +34,7 @@ interface ProviderCatalogDeps {
 const TRAILING_SLASH_RE = /\/$/
 const VERSIONED_API_PATH_RE = /\/v\d+\/?$/i
 const ANTHROPIC_VERSION = '2023-06-01'
+const PRIVATE_PROVIDER_HOSTS_ENV = 'CRADLE_ALLOW_PRIVATE_PROVIDER_HOSTS'
 const OpenAICompatibleModelsResponseSchema = z.object({
   data: z
     .array(
@@ -271,15 +273,34 @@ function modelRequestOptions(baseUrl: string, headers?: HeadersInit): ModelsRequ
   return urls.map(url => ({ url, headers }))
 }
 
+function readPrivateProviderHostAllowlist(): Set<string> {
+  return new Set(
+    (process.env[PRIVATE_PROVIDER_HOSTS_ENV] ?? '')
+      .split(/[,\s]+/)
+      .map(host => host.trim().toLowerCase().replace(/^\[|\]$/g, ''))
+      .filter(Boolean),
+  )
+}
+
 async function fetchModelsPayload(
   providerKind: ProviderKind,
   options: ModelsRequestOption[],
 ): Promise<unknown> {
   let lastError: unknown = null
+  const allowPrivateHosts = readPrivateProviderHostAllowlist()
 
   for (const option of options) {
     try {
-      const response = await fetch(option.url, { headers: option.headers })
+      const response = await guardedFetch(option.url, {
+        headers: option.headers,
+      }, {
+        allowPrivateHosts,
+        blockedHostCode: 'provider_base_url_blocked_host',
+        invalidSchemeCode: 'provider_base_url_invalid_scheme',
+        invalidUrlCode: 'provider_base_url_invalid_url',
+        message: 'Provider model endpoint is not allowed',
+        unresolvedHostCode: 'provider_base_url_unresolved_host',
+      })
       if (response.ok) {
         return response.json()
       }

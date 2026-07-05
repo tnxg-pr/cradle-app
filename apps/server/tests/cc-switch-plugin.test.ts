@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { shutdownInfra } from '../src/infra'
+import { calculatePluginPackageChecksum } from '../src/plugins/package-checksum'
+import { grantPluginTrust } from '../src/plugins/trust-grants'
 
 function tempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -15,6 +17,11 @@ function tempDir(prefix: string): string {
 
 function repoPluginsDir(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), '../../../plugins')
+}
+
+async function grantCcSwitchPluginTrust(): Promise<void> {
+  const packageDir = join(repoPluginsDir(), 'cc-switch')
+  grantPluginTrust('@cradle/cc-switch', await calculatePluginPackageChecksum(packageDir), 'test trust grant')
 }
 
 function writeCcSwitchDatabase(path: string): void {
@@ -118,6 +125,7 @@ describe('cc switch external provider plugin', () => {
       mkdirSync(ccSwitchDir, { recursive: true })
       writeFileSync(settingsPath, JSON.stringify({ currentProviderClaude: 'claude-fixture' }), { flag: 'w' })
       writeCcSwitchDatabase(dbPath)
+      await grantCcSwitchPluginTrust()
 
       const app = await createServerApp({ startBackgroundTasks: false })
       const sourcesRes = await app.handle(new Request('http://localhost/external-provider-sources'))

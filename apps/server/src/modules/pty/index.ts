@@ -1,8 +1,15 @@
 import type { Elysia } from 'elysia'
 import { z } from 'zod'
 
+import { createUnauthorizedError, verifyWebSocketRequestToken } from '../../http/auth'
 import { PtyModel } from './model'
 import * as Pty from './service'
+
+function rejectUnauthorizedSocketRequest(request: Request): void {
+  if (!verifyWebSocketRequestToken(request)) {
+    throw createUnauthorizedError()
+  }
+}
 
 const SocketClientEventSchema = z.discriminatedUnion('type', [
   z.object({
@@ -55,6 +62,9 @@ export function registerPtyRoutes(app: Elysia): Elysia {
       body: PtyModel.clientEvent,
       response: PtyModel.serverEvent,
       parse: (_ws, message) => SocketMessageSchema.parse(message),
+      beforeHandle({ request }) {
+        rejectUnauthorizedSocketRequest(request)
+      },
       open(ws) {
         try {
           Pty.openChatSocket({
@@ -109,6 +119,9 @@ export function registerPtyRoutes(app: Elysia): Elysia {
       body: PtyModel.clientEvent,
       response: PtyModel.serverEvent,
       parse: (_ws, message) => SocketMessageSchema.parse(message),
+      beforeHandle({ request }) {
+        rejectUnauthorizedSocketRequest(request)
+      },
       open(ws) {
         try {
           Pty.openShellSocket({

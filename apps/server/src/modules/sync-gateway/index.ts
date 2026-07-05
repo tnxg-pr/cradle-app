@@ -2,6 +2,7 @@ import type { Elysia } from 'elysia'
 import { t } from 'elysia'
 import { z } from 'zod'
 
+import { createUnauthorizedError, verifyWebSocketRequestToken } from '../../http/auth'
 import {
   closeSyncSocket,
   handleSyncSocketMessage,
@@ -23,6 +24,11 @@ export function registerSyncGatewayRoutes(app: Elysia): Elysia {
   app.ws('/sync', {
     detail: { summary: 'Multiplexed realtime sync channel', tags: ['sync'] },
     body: t.Any(),
+    beforeHandle({ request }) {
+      if (!verifyWebSocketRequestToken(request)) {
+        throw createUnauthorizedError()
+      }
+    },
     open(ws) {
       openSyncSocket(ws)
     },

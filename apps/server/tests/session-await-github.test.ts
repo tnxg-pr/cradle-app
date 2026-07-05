@@ -6,6 +6,7 @@ import { workspaces } from '@cradle/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 import { createBypassRule } from '../src/modules/session-await/service'
 import { fetchLiveCIStatus, githubCISource, resetTokenCache } from '../src/modules/session-await/sources/github-ci'
 import { githubReviewSource } from '../src/modules/session-await/sources/github-review'
@@ -227,7 +228,7 @@ describe('gitHub session-await sources', () => {
   })
 
   it('does not bypass required checks or statuses', async () => {
-    db().insert(workspaces).values({ id: 'workspace-1', name: 'ws', path: '/tmp/ws' }).run()
+    db().insert(workspaces).values(workspaceFixture({ id: 'workspace-1', name: 'ws', path: '/tmp/ws' })).run()
     createBypassRule('workspace-1', 'acme/app', '*')
     installGitHubFetch({
       '/repos/acme/app/pulls/42': {

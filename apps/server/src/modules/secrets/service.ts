@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto'
 
 import { agentCredentials } from '@cradle/db'
-import { eq } from 'drizzle-orm'
+import { asc, eq } from 'drizzle-orm'
 
 import { AppError } from '../../errors/app-error'
 import { db } from '../../infra'
@@ -46,6 +46,27 @@ export interface SecretValueWithMetadata {
 const ALGORITHM = 'aes-256-gcm'
 const IV_BYTES = 12
 const SYSTEM_SECRET_KIND_PREFIX = 'system-'
+const LEGACY_KEY_VERSION = 1
+
+type CredentialRow = typeof agentCredentials.$inferSelect
+
+interface EncryptedCredentialEnvelope {
+  version: number
+  ivPart: string
+  payloadPart: string
+  tagPart: string
+}
+
+export interface RotateEncryptionKeyInput {
+  from: string
+  to: string
+}
+
+export interface RotateEncryptionKeyResult {
+  rotated: number
+  fromVersion: number
+  toVersion: number
+}
 
 function getCredentialSecret(): string | null {
   return process.env.CRADLE_CREDENTIAL_SECRET?.trim() || null
@@ -55,29 +76,84 @@ function isConfigured(): boolean {
   return Boolean(getCredentialSecret())
 }
 
-function getKey(): Buffer {
-  const secret = getCredentialSecret()
-  if (!secret) {
-    throw new Error('CRADLE_CREDENTIAL_SECRET is not configured')
-  }
+function deriveKey(secret: string): Buffer {
   return createHash('sha256').update(secret).digest()
 }
 
-function encrypt(plainText: string): string {
-  const key = getKey()
+function readCredentialKeyVersion(secret: Pick<CredentialRow, 'keyVersion'>): number {
+  return secret.keyVersion ?? LEGACY_KEY_VERSION
+}
+
+function readActiveKeyVersion(database: ReturnType<typeof db> = db()): number {
+  const versions = database
+    .select({ keyVersion: agentCredentials.keyVersion })
+    .from(agentCredentials)
+    .all()
+    .map(row => row.keyVersion ?? LEGACY_KEY_VERSION)
+
+  return Math.max(LEGACY_KEY_VERSION, ...versions)
+}
+
+function encryptWithSecret(plainText: string, secret: string, keyVersion: number): string {
+  const key = deriveKey(secret)
   const iv = randomBytes(IV_BYTES)
   const cipher = createCipheriv(ALGORITHM, key, iv)
   const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()])
   const tag = cipher.getAuthTag()
-  return `${iv.toString('base64')}:${encrypted.toString('base64')}:${tag.toString('base64')}`
+  return `v${keyVersion}:${iv.toString('base64')}:${encrypted.toString('base64')}:${tag.toString('base64')}`
 }
 
-function decrypt(encryptedText: string): string {
-  const key = getKey()
-  const [ivPart, payloadPart, tagPart] = encryptedText.split(':')
-  if (!ivPart || !payloadPart || !tagPart) {
+function encrypt(plainText: string, keyVersion = readActiveKeyVersion()): string {
+  const secret = getCredentialSecret()
+  if (!secret) {
+    throw new Error('CRADLE_CREDENTIAL_SECRET is not configured')
+  }
+  return encryptWithSecret(plainText, secret, keyVersion)
+}
+
+function parseEncryptedCredential(encryptedText: string): EncryptedCredentialEnvelope {
+  const parts = encryptedText.split(':')
+  if (parts.length === 3) {
+    const [ivPart, payloadPart, tagPart] = parts
+    if (!ivPart || !payloadPart || !tagPart) {
+      throw new Error('Invalid encrypted credential payload')
+    }
+    return {
+      version: LEGACY_KEY_VERSION,
+      ivPart,
+      payloadPart,
+      tagPart,
+    }
+  }
+
+  if (parts.length !== 4) {
     throw new Error('Invalid encrypted credential payload')
   }
+
+  const [versionPart, ivPart, payloadPart, tagPart] = parts
+  const version = versionPart?.startsWith('v')
+    ? Number.parseInt(versionPart.slice(1), 10)
+    : Number.NaN
+
+  if (!Number.isInteger(version) || version <= 0 || !ivPart || !payloadPart || !tagPart) {
+    throw new Error('Invalid encrypted credential payload')
+  }
+
+  return {
+    version,
+    ivPart,
+    payloadPart,
+    tagPart,
+  }
+}
+
+function decryptWithSecret(encryptedText: string, secret: string, expectedVersion?: number): string {
+  const envelope = parseEncryptedCredential(encryptedText)
+  if (expectedVersion && envelope.version !== expectedVersion) {
+    throw new Error('Encrypted credential key version mismatch')
+  }
+  const key = deriveKey(secret)
+  const { ivPart, payloadPart, tagPart } = envelope
   const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(ivPart, 'base64'))
   decipher.setAuthTag(Buffer.from(tagPart, 'base64'))
   const decrypted = Buffer.concat([
@@ -85,6 +161,14 @@ function decrypt(encryptedText: string): string {
     decipher.final(),
   ])
   return decrypted.toString('utf8')
+}
+
+function decryptCredential(secret: CredentialRow): string {
+  const credentialSecret = getCredentialSecret()
+  if (!credentialSecret) {
+    throw new Error('CRADLE_CREDENTIAL_SECRET is not configured')
+  }
+  return decryptWithSecret(secret.encryptedSecret, credentialSecret, readCredentialKeyVersion(secret))
 }
 
 function maskSecret(secret: string): string {
@@ -119,13 +203,15 @@ export function saveSecret(input: SaveSecretInput): SecretMetadata {
   ensureConfigured()
   const now = Math.floor(Date.now() / 1000)
   const id = randomUUID()
-  const encryptedSecret = encrypt(input.secret)
+  const keyVersion = readActiveKeyVersion()
+  const encryptedSecret = encrypt(input.secret, keyVersion)
 
   db().insert(agentCredentials).values({
     id,
     kind: input.kind,
     label: input.label,
     encryptedSecret,
+    keyVersion,
     createdAt: now,
     updatedAt: now,
   }).run()
@@ -149,10 +235,11 @@ export function upsertSecretInDb(database: ReturnType<typeof db>, input: UpsertS
   const existing = database.select().from(agentCredentials).where(eq(agentCredentials.id, input.id)).get()
   let encryptedSecret: string
   let existingDecrypted: string | null = null
+  const keyVersion = readActiveKeyVersion(database)
 
   if (existing) {
     try {
-      existingDecrypted = decrypt(existing.encryptedSecret)
+      existingDecrypted = decryptCredential(existing)
     }
     catch {
       // Failed to decrypt - will re-encrypt with current key
@@ -160,11 +247,11 @@ export function upsertSecretInDb(database: ReturnType<typeof db>, input: UpsertS
   }
 
   // Only re-encrypt if the secret value has changed or decryption failed
-  if (existing && existingDecrypted === input.secret) {
+  if (existing && existingDecrypted === input.secret && readCredentialKeyVersion(existing) === keyVersion) {
     encryptedSecret = existing.encryptedSecret
   }
   else {
-    encryptedSecret = encrypt(input.secret)
+    encryptedSecret = encrypt(input.secret, keyVersion)
   }
 
   database.insert(agentCredentials).values({
@@ -172,6 +259,7 @@ export function upsertSecretInDb(database: ReturnType<typeof db>, input: UpsertS
       kind: input.kind,
       label: input.label,
       encryptedSecret,
+      keyVersion,
       createdAt: now,
       updatedAt: now,
     }).onConflictDoUpdate({
@@ -180,6 +268,7 @@ export function upsertSecretInDb(database: ReturnType<typeof db>, input: UpsertS
         kind: input.kind,
         label: input.label,
         encryptedSecret,
+        keyVersion,
         updatedAt: now,
       },
     }).run()
@@ -201,9 +290,11 @@ export function upsertSecret(input: UpsertSecretInput): SecretMetadata {
 
 export function updateSecretValue(id: string, secret: string): void {
   ensureConfigured()
-  const encryptedSecret = encrypt(secret)
+  const keyVersion = readActiveKeyVersion()
+  const encryptedSecret = encrypt(secret, keyVersion)
   const result = db().update(agentCredentials).set({
       encryptedSecret,
+      keyVersion,
       updatedAt: Math.floor(Date.now() / 1000),
     }).where(eq(agentCredentials.id, id)).run()
   if (result.changes === 0) {
@@ -230,7 +321,7 @@ export function listSecrets(): SecretMetadata[] {
     .filter(secret => !secret.kind.startsWith(SYSTEM_SECRET_KIND_PREFIX))
     .map((secret) => {
       try {
-        const plainText = decrypt(secret.encryptedSecret)
+        const plainText = decryptCredential(secret)
         return {
           id: secret.id,
           kind: secret.kind,
@@ -266,7 +357,7 @@ export function readSecret(id: string): string {
       details: { id },
     })
   }
-  return decrypt(secret.encryptedSecret)
+  return decryptCredential(secret)
 }
 
 export function readSecretValueWithMetadata(id: string): SecretValueWithMetadata {
@@ -284,8 +375,60 @@ export function readSecretValueWithMetadata(id: string): SecretValueWithMetadata
     id: secret.id,
     kind: secret.kind,
     label: secret.label,
-    secret: decrypt(secret.encryptedSecret),
+    secret: decryptCredential(secret),
   }
+}
+
+export function rotateEncryptionKey(input: RotateEncryptionKeyInput): RotateEncryptionKeyResult {
+  ensureConfigured()
+  const from = input.from.trim()
+  const to = input.to.trim()
+  if (!from || !to) {
+    throw new AppError({
+      code: 'invalid_secret_rotation_input',
+      status: 400,
+      message: 'Both source and target credential secrets are required',
+    })
+  }
+  if (from === to) {
+    throw new AppError({
+      code: 'invalid_secret_rotation_input',
+      status: 400,
+      message: 'Source and target credential secrets must differ',
+    })
+  }
+
+  return db().transaction((tx) => {
+    const rows = tx
+      .select()
+      .from(agentCredentials)
+      .orderBy(asc(agentCredentials.label), asc(agentCredentials.id))
+      .all()
+    const fromVersion = rows.reduce(
+      (version, row) => Math.max(version, readCredentialKeyVersion(row)),
+      LEGACY_KEY_VERSION,
+    )
+    const toVersion = fromVersion + 1
+    const now = Math.floor(Date.now() / 1000)
+
+    for (const row of rows) {
+      const plainText = decryptWithSecret(row.encryptedSecret, from, readCredentialKeyVersion(row))
+      tx.update(agentCredentials)
+        .set({
+          encryptedSecret: encryptWithSecret(plainText, to, toVersion),
+          keyVersion: toVersion,
+          updatedAt: now,
+        })
+        .where(eq(agentCredentials.id, row.id))
+        .run()
+    }
+
+    return {
+      rotated: rows.length,
+      fromVersion,
+      toVersion,
+    }
+  })
 }
 
 function readChatgptCredentialSummary(rawSecret: string): ChatgptCredentialSummary | null {

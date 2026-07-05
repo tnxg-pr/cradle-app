@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 
 function makeTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -44,8 +45,8 @@ describe('search capability', () => {
       const now = Math.floor(Date.now() / 1000)
 
       d.insert(workspaces).values([
-        { id: workspaceOneId, name: 'Workspace One', path: workspaceRootOne },
-        { id: workspaceTwoId, name: 'Workspace Two', path: workspaceRootTwo },
+        workspaceFixture({ id: workspaceOneId, name: 'Workspace One', path: workspaceRootOne }),
+        workspaceFixture({ id: workspaceTwoId, name: 'Workspace Two', path: workspaceRootTwo }),
       ]).run()
       d.insert(providerTargets).values({
         id: providerTargetId,
@@ -173,11 +174,11 @@ describe('search capability', () => {
       const manualMessageId = randomUUID()
       const now = Math.floor(Date.now() / 1000)
 
-      d.insert(workspaces).values({
+      d.insert(workspaces).values(workspaceFixture({
         id: workspaceId,
         name: 'Origin Search Workspace',
         path: workspaceRoot,
-      }).run()
+      })).run()
       d.insert(providerTargets).values({
         id: providerTargetId,
         kind: 'manual',
@@ -283,8 +284,8 @@ describe('search capability', () => {
       const now = Math.floor(Date.now() / 1000)
 
       d.insert(workspaces).values([
-        { id: workspaceOneId, name: 'Workspace One', path: workspaceRootOne },
-        { id: workspaceTwoId, name: 'Workspace Two', path: workspaceRootTwo },
+        workspaceFixture({ id: workspaceOneId, name: 'Workspace One', path: workspaceRootOne }),
+        workspaceFixture({ id: workspaceTwoId, name: 'Workspace Two', path: workspaceRootTwo }),
       ]).run()
 
       d.insert(chronicleMemories).values([
